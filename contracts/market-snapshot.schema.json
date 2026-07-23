@@ -1,0 +1,65 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://doctore.local/schemas/market-snapshot.schema.json",
+  "title": "Doctore market snapshot",
+  "description": "A complete, timestamped and executable sportsbook market used by the deterministic decision core.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "event_id",
+    "market_id",
+    "book",
+    "captured_at",
+    "event_start_at",
+    "sport",
+    "competition",
+    "market_type",
+    "target_market",
+    "period",
+    "line",
+    "settlement_rules",
+    "selection",
+    "decimal_odds",
+    "market_status",
+    "is_complete",
+    "outcomes"
+  ],
+  "properties": {
+    "schema_version": {"const": "doctore.market-snapshot.v1"},
+    "event_id": {"type": "string", "minLength": 1},
+    "market_id": {"type": "string", "minLength": 1},
+    "book": {"type": "string", "minLength": 1},
+    "book_market_id": {"type": "string", "minLength": 1},
+    "captured_at": {"type": "string", "format": "date-time"},
+    "event_start_at": {"type": "string", "format": "date-time"},
+    "sport": {"enum": ["MLB", "KBO", "NPB", "TENNIS", "SOCCER", "NBA", "WNBA", "NFL"]},
+    "competition": {"type": "string", "minLength": 1},
+    "market_type": {"type": "string", "minLength": 1},
+    "target_market": {"type": "string", "minLength": 1},
+    "period": {"type": "string", "minLength": 1},
+    "line": {"type": ["number", "string", "null"]},
+    "settlement_rules": {"type": "string", "minLength": 1},
+    "selection": {"type": "string", "minLength": 1},
+    "decimal_odds": {"type": "number", "exclusiveMinimum": 1},
+    "market_status": {"enum": ["open", "suspended", "closed"]},
+    "is_complete": {"const": true},
+    "outcomes": {
+      "type": "array",
+      "minItems": 2,
+      "uniqueItems": true,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["selection", "decimal_odds"],
+        "properties": {
+          "selection": {"type": "string", "minLength": 1},
+          "decimal_odds": {"type": "number", "exclusiveMinimum": 1}
+        }
+      }
+    },
+    "correlation_group": {"type": ["string", "null"], "minLength": 1},
+    "source": {"type": "string", "minLength": 1},
+    "source_url": {"type": "string", "format": "uri"}
+  }
+}
