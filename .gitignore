@@ -1,0 +1,33 @@
+# Secrets and local environment
+.env
+.env.*
+!.env.example
+.venv/
+venv/
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+
+# Notebooks
+.ipynb_checkpoints/
+
+# Licensed, private, and raw data
+private/
+data/raw/
+data/licensed/
+data/imports/
+
+# Generated model and analysis artifacts
+artifacts/
+models/artifacts/
+research/output/
+research/human_review/logs/
+*.jsonl
+
+# Local bankroll and settlement records
+bankroll/
+ledger/
+settlements/
