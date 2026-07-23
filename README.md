@@ -24,6 +24,7 @@ Market snapshot
 - A set of reusable Markdown skills for ChatGPT, Claude, internal agents, and analyst workflows.
 - A specification for the data contract between odds feeds, prediction models, risk controls, and the explanation layer.
 - A guardrail against stale data, unsupported probabilities, narrative betting, and incorrect Kelly sizing.
+- A tested reference implementation of the core market mathematics.
 
 ## What this repository is not
 
@@ -49,7 +50,8 @@ Market snapshot
    - `skills/shared/output-format.md`
 4. Load the relevant sport module.
 5. Provide a timestamped odds snapshot and model output. See `examples/sample-model-output.json`.
-6. Ask the system to scan the market or evaluate a specific event.
+6. Verify the mathematics with `python -m unittest discover -s tests -v`.
+7. Ask the system to scan the market or evaluate a specific event.
 
 ## Supported initial domains
 
@@ -87,12 +89,12 @@ Additional sport-specific fields are required where relevant, such as confirmed 
 
 ## Mathematical definitions
 
-For decimal odds `d` and calibrated model probability `p`:
+For decimal odds `d`, calibrated model probability `p_model`, and uncertainty-adjusted sizing probability `p_sized`:
 
 ```text
 Raw implied probability = 1 / d
-EV = p * d - 1
-Full Kelly fraction = (p * d - 1) / (d - 1)
+EV = p_model * d - 1
+Full Kelly fraction = (p_sized * d - 1) / (d - 1)
 ```
 
 For a two-way market with decimal odds `d1` and `d2`:
@@ -105,7 +107,7 @@ No-vig P2 = q2 / (q1 + q2)
 Edge in percentage points = Model P - No-vig market P
 ```
 
-Do not substitute no-vig market probability for the bet's break-even probability when calculating EV or Kelly. See `docs/mathematics.md` for worked examples.
+Do not substitute no-vig market probability for the bet's break-even probability when calculating EV. Do not size directly from an unadjusted model probability when uncertainty shrinkage is required. See `docs/mathematics.md` and `src/doctore_math.py`.
 
 ## Default Doctore controls
 
@@ -139,6 +141,7 @@ The maximum Kelly fraction is not a default. It is permitted only when model cal
 
 ```text
 doctore/
+├── .github/workflows/test.yml
 ├── README.md
 ├── PROJECT_INSTRUCTIONS.md
 ├── CONTRIBUTING.md
@@ -151,6 +154,10 @@ doctore/
 │   ├── sample-model-output.json
 │   ├── sample-daily-output.md
 │   └── sample-bet-log.csv
+├── src/
+│   └── doctore_math.py
+├── tests/
+│   └── test_doctore_math.py
 └── skills/
     ├── data-ingestion/SKILL.md
     ├── market-baseline/SKILL.md
