@@ -1,0 +1,74 @@
+{
+  "calibration": {
+    "calibration_artifact_sha256": "e695521baa75f755e0f67d37e4cd2e71531d81ae9f12b4ab0a51fcf1e69e19bb",
+    "calibration_version": "1.4.2-example-platt-e695521baa75",
+    "method": "platt_logistic_on_logit_raw_probability",
+    "probability_opposing_calibrated": 0.42361236589635354,
+    "probability_push": 0.0,
+    "probability_selected_calibrated": 0.5763876341036465,
+    "probability_selected_raw": 0.509090909090909,
+    "status": "degraded",
+    "training_sample_size": 90
+  },
+  "content_sha256": "bd33cafba7f16a69327db8cdfeebcc7d22e35bb155a072d8c95d65cdfe515e0a",
+  "decision_inputs": {
+    "edge_probability_points": 0.07638763410364646,
+    "expected_value_with_push": 0.12395588650211065
+  },
+  "distribution": {
+    "method": "empirical_oos_residual_cdf",
+    "probability_over_conditional_non_push_raw": 0.509090909090909,
+    "probability_over_raw": 0.509090909090909,
+    "probability_push_raw": 0.0,
+    "probability_under_raw": 0.4909090909090909,
+    "residual_artifact_sha256": "dc9924c293be55fe88ab0ce93e4d3bf11fde8db7bee6e97b8866e630f6ed8eca",
+    "residual_distribution_version": "1.4.2-example-residuals-dc9924c293be",
+    "residual_sample_size": 110,
+    "threshold_residual": 3.7442779541015625
+  },
+  "event_id": "NBA-EXAMPLE-001",
+  "immutability": {
+    "canonicalization": "json-sort-keys-utf8",
+    "write_policy": "create-only-no-overwrite"
+  },
+  "market": {
+    "book": "Pinnacle",
+    "line": 224.5,
+    "market_type": "game_total",
+    "no_vig_probability": 0.5,
+    "odds_decimal": 1.95,
+    "opposing_odds_decimal": 1.95,
+    "period": "full_game_including_overtime",
+    "selection": "over",
+    "snapshot_at": "2026-07-23T15:40:00+03:00"
+  },
+  "metadata": {
+    "disclaimer": "Synthetic schema example only. Not a betting recommendation."
+  },
+  "model": {
+    "feature_cutoff_at": "2026-07-23T15:38:00+03:00",
+    "feature_schema_version": "nba-total-features-v7",
+    "model_artifact_sha256": "3f84c24ac50e40e2a8891f249f270f1568c0a4a1e08ef0a30610fe685e956ed6",
+    "model_name": "doctore-nba-total-xgb",
+    "model_version": "1.4.2-example",
+    "point_estimate": 220.75572204589844,
+    "prediction_generated_at": "2026-07-23T15:41:00+03:00",
+    "training_cutoff_at": "2026-01-08T01:00:00+00:00"
+  },
+  "output_schema_version": "doctore-prediction-v2.0.0",
+  "prediction_id": "doctore_bd33cafba7f16a69327db8cd",
+  "sport": "NBA",
+  "validation": {
+    "brier_skill_score": -0.02290007325562282,
+    "market_brier_score": 0.25,
+    "market_ece": 0.01666666666666672,
+    "market_log_loss": 0.6931471805599454,
+    "method": "expanding_walk_forward_oos",
+    "model_brier_score": 0.2557250183139057,
+    "model_ece": 0.1082918962379642,
+    "model_log_loss": 0.7053946006890564,
+    "sample_size": 60,
+    "validation_period_end": "2026-01-08T01:00:00+00:00",
+    "validation_period_start": "2026-01-05T14:00:00+00:00"
+  }
+}
