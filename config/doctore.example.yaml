@@ -1,0 +1,92 @@
+system:
+  name: Doctore Sports Intelligence
+  timezone: Europe/Helsinki
+  currency: EUR
+  primary_reference_book: Pinnacle
+
+bankroll:
+  amount: 50000
+  unit_size: 500
+  recalculate_unit: false
+
+qualification:
+  minimum_ev: 0.03
+  minimum_edge_pp: 0.015
+  require_model_probability: true
+  require_model_version: true
+  require_complete_market: true
+  require_price_timestamp: true
+
+kelly:
+  uncalibrated_fraction: 0.10
+  validated_fraction: 0.25
+  maximum_fraction: 0.60
+  maximum_requires_comparable_bets: 500
+  use_market_shrinkage: true
+  default_shrinkage_uncalibrated: 0.35
+  default_shrinkage_partially_validated: 0.60
+  default_shrinkage_validated: 0.85
+
+risk:
+  max_bankroll_per_bet: 0.02
+  max_open_exposure: 0.10
+  max_daily_turnover: 0.25
+  max_league_exposure: 0.15
+  max_rolling_3d_turnover: 0.40
+  drawdown_warning: 0.10
+  drawdown_review: 0.15
+  drawdown_pause: 0.20
+  block_unknown_correlation: true
+
+freshness_seconds:
+  pregame_price: 300
+  portfolio_state: 60
+  model_default: 1800
+  injury_report_default: 10800
+  weather_default: 10800
+  outdoor_weather_near_start: 3600
+
+sports:
+  MLB:
+    enabled: true
+    require_confirmed_starters: true
+    require_lineup_compatibility: true
+    full_game_requires_bullpen_state: true
+  KBO:
+    enabled: true
+    require_confirmed_starters: true
+    separate_calibration_domain: true
+  NPB:
+    enabled: true
+    require_confirmed_starters: true
+    separate_calibration_domain: true
+  TENNIS:
+    enabled: true
+    require_surface_match: true
+    require_format_match: true
+    require_retirement_rule_match: true
+  SOCCER:
+    enabled: true
+    require_complete_1x2_market: true
+    require_competition_state: true
+  NBA:
+    enabled: true
+    require_current_roster: true
+    preseason_requires_separate_model: true
+  WNBA:
+    enabled: true
+    require_current_roster: true
+    separate_calibration_domain: true
+  NFL:
+    enabled: true
+    require_confirmed_quarterbacks: true
+    preseason_requires_separate_model: true
+
+output:
+  show_calculations: true
+  show_price_threshold: true
+  show_data_quality: true
+  show_model_version: true
+  show_sizing_probability: true
+  show_correlation_group: true
+  compact_channel: WhatsApp
