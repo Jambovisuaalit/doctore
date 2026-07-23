@@ -1,0 +1,14 @@
+{
+  "review_id": "review-example-001",
+  "packet_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+  "prediction_id": "doctore_example_prediction",
+  "model_version": "personal-research-example-v1",
+  "reviewed_at": "2026-07-23T18:30:00Z",
+  "system_decision": "BET",
+  "human_decision": "approved",
+  "model_probability_changed": false,
+  "proposed_stake": 100.0,
+  "approved_stake": 50.0,
+  "reason": "Synthetic example: approved at a reduced stake after manual review.",
+  "notes": "No automatic execution. This file contains no real betting data."
+}
