@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://doctore.local/schemas/personal-human-review.schema.json",
+  "title": "Doctore personal human review",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "review_id",
+    "packet_sha256",
+    "prediction_id",
+    "model_version",
+    "reviewed_at",
+    "system_decision",
+    "human_decision",
+    "model_probability_changed",
+    "proposed_stake",
+    "approved_stake",
+    "reason"
+  ],
+  "properties": {
+    "review_id": {"type": "string", "minLength": 1},
+    "packet_sha256": {"$ref": "#/$defs/sha256"},
+    "prediction_id": {"type": "string", "minLength": 1},
+    "model_version": {"type": "string", "minLength": 1},
+    "reviewed_at": {"type": "string", "format": "date-time"},
+    "system_decision": {"enum": ["BET", "WATCH", "PASS", "BLOCKED"]},
+    "human_decision": {"enum": ["approved", "rejected", "watch", "refresh_required"]},
+    "model_probability_changed": {"const": false},
+    "proposed_stake": {"type": "number", "minimum": 0},
+    "approved_stake": {"type": "number", "minimum": 0},
+    "reason": {"type": "string", "minLength": 1},
+    "notes": {"type": "string"}
+  },
+  "$defs": {
+    "sha256": {
+      "type": "string",
+      "pattern": "^[a-fA-F0-9]{64}$"
+    }
+  }
+}
