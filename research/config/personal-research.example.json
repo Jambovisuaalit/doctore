@@ -1,0 +1,25 @@
+{
+  "mode": "personal_research_human_in_the_loop",
+  "automatic_bet_placement": false,
+  "human_approval_required": true,
+  "minimum_ev": 0.03,
+  "minimum_edge_probability_points": 0.015,
+  "kelly_fraction": {
+    "validated": 0.25,
+    "uncalibrated": 0.10,
+    "unknown": 0.0
+  },
+  "risk_limits": {
+    "max_stake_fraction_per_bet": 0.02,
+    "max_open_exposure_fraction": 0.10,
+    "max_daily_turnover_fraction": 0.25,
+    "max_league_exposure_fraction": 0.15,
+    "max_rolling_3d_turnover_fraction": 0.40
+  },
+  "review_rules": {
+    "model_probability_may_be_edited": false,
+    "stake_may_be_reduced": true,
+    "stake_may_exceed_system_proposal": false,
+    "reason_required": true
+  }
+}
