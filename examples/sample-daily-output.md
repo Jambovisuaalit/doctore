@@ -23,6 +23,7 @@ Market: Full-game moneyline
 Selection: Example Away
 Book: Pinnacle
 Executable odds: 2.10
+Opposing price: Example Home 1.75
 Price snapshot: 2026-07-23T09:13:40+03:00
 
 MODEL
@@ -30,19 +31,20 @@ Model: doctore-mlb-xgb v1.8.2
 Model generated: 2026-07-23T09:10:00+03:00
 Calibration: validated / isotonic
 Model probability: 51.0%
-Sizing probability: 49.8%
+Sizing probability: 50.2%
 
 MARKET
-No-vig probability: 48.5%
+No-vig probability: 45.5%
 Break-even probability: 47.6%
-Market margin: 2.8%
-Edge vs no-vig market: +2.5 pp
+Market margin: 4.8%
+Edge vs no-vig market: +5.5 pp
 EV at current price: +7.1%
 Minimum qualifying price: 2.02
 
 RISK
-Full Kelly from sizing probability: 4.1%
+Full Kelly from sizing probability: 4.9%
 Kelly fraction used: 25% of full Kelly
+Raw stake before rounding: approximately 608 EUR
 Final stake: 500 EUR
 Units: 1.0u
 Bankroll percentage: 1.0%
@@ -56,7 +58,7 @@ Context risks: bullpen availability may change near start
 Anti-bias flags: none
 
 ONE-LINE CASE
-The calibrated model prices Example Away at 51.0% versus a 48.5% no-vig market baseline, producing +7.1% EV at 2.10.
+The calibrated model prices Example Away at 51.0% versus a 45.5% no-vig market baseline, producing +7.1% EV at 2.10.
 
 EXECUTION RULE
 Bet only at 2.02 or better and only while both listed starters remain confirmed.
@@ -102,9 +104,9 @@ Bet: Example Away ML
 Odds: 2.10 @ Pinnacle
 Stake: 1.0u (500 EUR)
 Model P: 51.0%
-No-vig P: 48.5%
+No-vig P: 45.5%
 EV: +7.1%
 Confidence: 78/100
 Rule: 2.02+ and both listed starters confirmed
-Reason: Calibrated model edge is +2.5 pp versus the no-vig market with +7.1% EV at the current price.
+Reason: Calibrated model edge is +5.5 pp versus the no-vig market with +7.1% EV at the current price.
 ```
