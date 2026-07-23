@@ -36,7 +36,8 @@ Market snapshot
 ## Quick start
 
 1. Copy `PROJECT_INSTRUCTIONS.md` into the system or project instructions of the analysis agent.
-2. Load the core skills:
+2. Copy `config/doctore.example.yaml` and adjust bankroll, thresholds, freshness limits, and enabled sports.
+3. Load the core skills:
    - `skills/data-ingestion/SKILL.md`
    - `skills/market-baseline/SKILL.md`
    - `skills/model-probability/SKILL.md`
@@ -46,9 +47,20 @@ Market snapshot
    - `skills/shared/data-quality-gate.md`
    - `skills/shared/anti-bias-checklist.md`
    - `skills/shared/output-format.md`
-3. Load the relevant sport module.
-4. Provide a timestamped odds snapshot and model output.
-5. Ask the system to scan the market or evaluate a specific event.
+4. Load the relevant sport module.
+5. Provide a timestamped odds snapshot and model output. See `examples/sample-model-output.json`.
+6. Ask the system to scan the market or evaluate a specific event.
+
+## Supported initial domains
+
+- MLB.
+- KBO and NPB as separate calibration domains.
+- Tennis.
+- Soccer.
+- NBA and WNBA as separate calibration domains.
+- NFL.
+
+New sports should follow the same model-boundary, data-quality, market-matching, and risk-control rules.
 
 ## Required input contract
 
@@ -56,7 +68,7 @@ Every actionable candidate must include:
 
 ```yaml
 event_id: string
-sport: MLB | TENNIS | SOCCER | NBA | NFL
+sport: MLB | KBO | NPB | TENNIS | SOCCER | NBA | WNBA | NFL
 market: string
 selection: string
 book: string
@@ -93,7 +105,7 @@ No-vig P2 = q2 / (q1 + q2)
 Edge in percentage points = Model P - No-vig market P
 ```
 
-Do not substitute no-vig market probability for the bet's break-even probability when calculating EV or Kelly.
+Do not substitute no-vig market probability for the bet's break-even probability when calculating EV or Kelly. See `docs/mathematics.md` for worked examples.
 
 ## Default Doctore controls
 
@@ -129,10 +141,14 @@ The maximum Kelly fraction is not a default. It is permitted only when model cal
 doctore/
 ├── README.md
 ├── PROJECT_INSTRUCTIONS.md
+├── CONTRIBUTING.md
 ├── LICENSE
+├── config/
+│   └── doctore.example.yaml
 ├── docs/
 │   └── mathematics.md
 ├── examples/
+│   ├── sample-model-output.json
 │   ├── sample-daily-output.md
 │   └── sample-bet-log.csv
 └── skills/
@@ -148,6 +164,7 @@ doctore/
     │   └── output-format.md
     └── sport-specific/
         ├── mlb/SKILL.md
+        ├── kbo-npb/SKILL.md
         ├── tennis/SKILL.md
         ├── soccer/SKILL.md
         ├── nba/SKILL.md
