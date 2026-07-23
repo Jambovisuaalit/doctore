@@ -1,0 +1,154 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://doctore.local/schemas/model-output.schema.json",
+  "title": "Doctore model output",
+  "description": "Canonical, versioned probability output accepted by the Doctore decision pipeline.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "event_id",
+    "market_id",
+    "model_name",
+    "model_version",
+    "sport",
+    "competition",
+    "market_type",
+    "target_market",
+    "period",
+    "line",
+    "settlement_rules",
+    "selection",
+    "probability_raw",
+    "probability_calibrated",
+    "calibration_status",
+    "calibration_method",
+    "prediction_generated_at",
+    "feature_cutoff_at",
+    "training_cutoff_at",
+    "feature_schema_version",
+    "validation_domain",
+    "validation_window",
+    "validation_sample_size",
+    "brier_score",
+    "log_loss",
+    "expected_calibration_error"
+  ],
+  "properties": {
+    "schema_version": {"const": "doctore.model-output.v1"},
+    "event_id": {"type": "string", "minLength": 1},
+    "market_id": {"type": "string", "minLength": 1},
+    "model_name": {"type": "string", "minLength": 1},
+    "model_version": {"type": "string", "minLength": 1},
+    "sport": {"$ref": "#/$defs/sport"},
+    "competition": {"type": "string", "minLength": 1},
+    "market_type": {"type": "string", "minLength": 1},
+    "target_market": {"type": "string", "minLength": 1},
+    "period": {"type": "string", "minLength": 1},
+    "line": {"type": ["number", "string", "null"]},
+    "settlement_rules": {"type": "string", "minLength": 1},
+    "selection": {"type": "string", "minLength": 1},
+    "probability_raw": {"$ref": "#/$defs/probability"},
+    "probability_calibrated": {
+      "oneOf": [
+        {"$ref": "#/$defs/probability"},
+        {"type": "null"}
+      ]
+    },
+    "calibration_status": {"enum": ["validated", "uncalibrated", "unknown"]},
+    "calibration_method": {"enum": ["sigmoid", "isotonic", "beta", "none", "other"]},
+    "prediction_generated_at": {"type": "string", "format": "date-time"},
+    "feature_cutoff_at": {"type": "string", "format": "date-time"},
+    "training_cutoff_at": {"type": "string", "format": "date-time"},
+    "feature_schema_version": {"type": "string", "minLength": 1},
+    "validation_domain": {"$ref": "#/$defs/domain"},
+    "validation_window": {"type": ["string", "null"]},
+    "validation_sample_size": {"type": ["integer", "null"], "minimum": 1},
+    "brier_score": {
+      "oneOf": [
+        {"type": "number", "minimum": 0, "maximum": 1},
+        {"type": "null"}
+      ]
+    },
+    "log_loss": {
+      "oneOf": [
+        {"type": "number", "minimum": 0},
+        {"type": "null"}
+      ]
+    },
+    "expected_calibration_error": {
+      "oneOf": [
+        {"type": "number", "minimum": 0, "maximum": 1},
+        {"type": "null"}
+      ]
+    },
+    "training_data_version": {"type": "string", "minLength": 1},
+    "model_artifact_sha256": {"$ref": "#/$defs/sha256"},
+    "calibration_artifact_sha256": {"$ref": "#/$defs/sha256"},
+    "notes": {"type": "string"}
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {"calibration_status": {"const": "validated"}},
+        "required": ["calibration_status"]
+      },
+      "then": {
+        "properties": {
+          "probability_calibrated": {"$ref": "#/$defs/probability"},
+          "calibration_method": {"not": {"const": "none"}},
+          "validation_window": {"type": "string", "minLength": 1},
+          "validation_sample_size": {"type": "integer", "minimum": 1},
+          "brier_score": {"type": "number", "minimum": 0, "maximum": 1},
+          "log_loss": {"type": "number", "minimum": 0},
+          "expected_calibration_error": {"type": "number", "minimum": 0, "maximum": 1}
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {"calibration_status": {"const": "uncalibrated"}},
+        "required": ["calibration_status"]
+      },
+      "then": {
+        "properties": {"calibration_method": {"const": "none"}}
+      }
+    }
+  ],
+  "$defs": {
+    "probability": {
+      "type": "number",
+      "exclusiveMinimum": 0,
+      "exclusiveMaximum": 1
+    },
+    "sport": {
+      "enum": ["MLB", "KBO", "NPB", "TENNIS", "SOCCER", "NBA", "WNBA", "NFL"]
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^[a-fA-F0-9]{64}$"
+    },
+    "domain": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "sport",
+        "competition",
+        "market_type",
+        "target_market",
+        "period",
+        "line",
+        "settlement_rules"
+      ],
+      "properties": {
+        "sport": {"$ref": "#/$defs/sport"},
+        "competition": {"type": "string", "minLength": 1},
+        "market_type": {"type": "string", "minLength": 1},
+        "target_market": {"type": "string", "minLength": 1},
+        "period": {"type": "string", "minLength": 1},
+        "line": {"type": ["number", "string", "null"]},
+        "settlement_rules": {"type": "string", "minLength": 1}
+      }
+    }
+  }
+}

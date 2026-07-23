@@ -1,0 +1,18 @@
+{
+  "data-ingestion": {
+    "positive": ["Fetch today's Pinnacle MLB odds and timestamps", "Hae kokoonpanot ja sää ennen analyysiä"],
+    "negative": ["Calculate EV from supplied probability and odds"]
+  },
+  "edge-detection": {
+    "positive": ["Is 2.10 +EV if the model probability is 51%?", "Laske vedon minimikerroin 3 prosentin EV:lle"],
+    "negative": ["Find today's starting pitchers"]
+  },
+  "nfl": {
+    "positive": ["Analyze this NFL total and quarterback injury status", "Arvioi NFL over/under -kertoimet"],
+    "negative": ["Analyze an MLB first-five total"]
+  },
+  "performance-tracking": {
+    "positive": ["Calculate ROI, CLV and Brier score from the bet log", "Tee kuukausittainen tulosseuranta"],
+    "negative": ["Fetch live tennis odds"]
+  }
+}
