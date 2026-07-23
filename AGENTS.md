@@ -17,14 +17,14 @@ For an actionable betting decision, compose only the necessary skills in this or
 
 1. `data-ingestion` when data must be fetched, refreshed, or normalized.
 2. `data-quality-gate` for freshness, completeness, identity, and market matching.
-3. `market-baseline` for implied probability and no-vig normalization.
-4. `model-probability` for model provenance and calibration validation.
-5. One relevant sport skill: `mlb`, `kbo-npb`, `tennis`, `soccer`, `nba`, or `nfl`.
-6. `edge-detection` for EV, edge, and minimum-price calculation.
-7. `anti-bias-audit` before approval.
-8. `risk-management` for stake and portfolio caps.
-9. `output-format` for BET, WATCH, PASS, or BLOCKED output.
-10. `performance-tracking` only when creating or reviewing records and KPIs.
+3. `model-probability` for model provenance, calibration, and exact validation-domain checks.
+4. One relevant sport skill: `mlb`, `kbo-npb`, `tennis`, `soccer`, `nba`, or `nfl`.
+5. `anti-bias-audit` before approval.
+6. `bet-decision-core` for canonical no-vig, EV, edge, Kelly, exposure caps, and machine-readable decision output.
+7. `output-format` for channel-specific rendering of the deterministic result.
+8. `performance-tracking` only when creating or reviewing records and KPIs.
+
+The standalone `market-baseline`, `edge-detection`, and `risk-management` skills remain available for isolated calculations. For an actionable canonical JSON workflow, `bet-decision-core` is the single execution boundary and must not be duplicated manually.
 
 ## Global invariants
 
@@ -35,6 +35,7 @@ For an actionable betting decision, compose only the necessary skills in this or
 - Use deterministic scripts for no-vig, EV, Kelly, exposure, and performance calculations.
 - Do not infer sharp action from line movement without verified source data.
 - Do not claim live data unless it was retrieved or supplied in the current analysis.
+- A `BET` output is a recommendation and always requires human approval.
 
 ## Tool policy
 
