@@ -1,63 +1,38 @@
 {
+  "schema_version": "doctore.model-output.v1",
   "event_id": "MLB-EXAMPLE-001",
+  "market_id": "MLB-EXAMPLE-001-ML-AWAY",
+  "model_name": "doctore-mlb-xgb",
+  "model_version": "1.8.2",
   "sport": "MLB",
   "competition": "MLB",
-  "event_start_at": "2026-07-23T20:10:00+03:00",
-  "market": {
-    "market_id": "MLB-EXAMPLE-001-ML",
+  "market_type": "moneyline",
+  "target_market": "full_game_moneyline_including_extra_innings",
+  "period": "full_game",
+  "line": null,
+  "settlement_rules": "action_including_extra_innings",
+  "selection": "Example Away",
+  "probability_raw": 0.516,
+  "probability_calibrated": 0.51,
+  "calibration_status": "validated",
+  "calibration_method": "isotonic",
+  "prediction_generated_at": "2026-07-23T09:10:00+03:00",
+  "feature_cutoff_at": "2026-07-23T09:08:00+03:00",
+  "training_cutoff_at": "2026-07-20T23:59:59Z",
+  "feature_schema_version": "mlb-fs-3.4",
+  "validation_domain": {
+    "sport": "MLB",
+    "competition": "MLB",
     "market_type": "moneyline",
-    "period": "full_game",
-    "selection": "Example Away",
-    "book": "Pinnacle",
-    "odds_decimal": 2.1,
-    "snapshot_at": "2026-07-23T09:13:40+03:00",
-    "opposing_outcomes": [
-      {
-        "selection": "Example Away",
-        "odds_decimal": 2.1
-      },
-      {
-        "selection": "Example Home",
-        "odds_decimal": 1.75
-      }
-    ]
-  },
-  "model": {
-    "model_name": "doctore-mlb-xgb",
-    "model_version": "1.8.2",
     "target_market": "full_game_moneyline_including_extra_innings",
-    "selection": "Example Away",
-    "probability_raw": 0.516,
-    "probability_calibrated": 0.51,
-    "calibration_status": "calibrated",
-    "calibration_method": "isotonic",
-    "prediction_generated_at": "2026-07-23T09:10:00+03:00",
-    "feature_cutoff_at": "2026-07-23T09:08:00+03:00",
-    "feature_schema_version": "mlb-fs-3.4",
-    "training_cutoff_at": "2026-07-20T23:59:59Z",
-    "validation_window": "rolling_out_of_sample_2026",
-    "validation_sample_size": 1240,
-    "brier_score": 0.231,
-    "log_loss": 0.655,
-    "expected_calibration_error": 0.018
+    "period": "full_game",
+    "line": null,
+    "settlement_rules": "action_including_extra_innings"
   },
-  "confirmations": {
-    "starting_pitcher_away": "Confirmed Away Starter",
-    "starting_pitcher_home": "Confirmed Home Starter",
-    "lineup_state": "projected_compatible",
-    "bullpen_state_cutoff_at": "2026-07-23T08:55:00+03:00",
-    "roof_status": "not_applicable",
-    "weather_snapshot_at": "2026-07-23T09:00:00+03:00",
-    "listed_pitcher_rule": "action"
-  },
-  "portfolio": {
-    "bankroll": 50000,
-    "open_exposure": 1000,
-    "daily_turnover": 1500,
-    "league_exposure": 1000,
-    "rolling_3d_turnover": 4500,
-    "as_of": "2026-07-23T09:14:30+03:00",
-    "correlated_positions": []
-  },
-  "disclaimer": "Fictional schema example only. Not an actual betting recommendation."
+  "validation_window": "rolling_out_of_sample_2026",
+  "validation_sample_size": 1240,
+  "brier_score": 0.231,
+  "log_loss": 0.655,
+  "expected_calibration_error": 0.018,
+  "notes": "Fictional schema example only. Not an actual betting recommendation."
 }
