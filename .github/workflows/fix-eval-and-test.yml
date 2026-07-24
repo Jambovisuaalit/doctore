@@ -4,6 +4,9 @@ on:
   push:
     branches:
       - refactor/progressive-disclosure-skills
+  pull_request:
+    branches:
+      - main
 
 permissions:
   contents: write
