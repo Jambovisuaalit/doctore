@@ -117,6 +117,7 @@ def main() -> int:
             "npx", "--yes", INSPECTOR_PACKAGE, "--cli",
             "-e", f"DOCTORE_REPO_PATH={repo}",
             "-e", f"DOCTORE_BET_LOG={bet_log}",
+            "-e", f"DOCTORE_MODEL_ARTIFACT_ROOT={temp}",
             args.python, str(server_path),
         ]
 
