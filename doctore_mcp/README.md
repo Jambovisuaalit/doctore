@@ -1,58 +1,49 @@
 # doctore_mcp
 
-Personal stdio MCP server for the canonical Doctore betting research pipeline.
-It does not place bets. Every logged bet requires a deterministic `BET` output
-and an explicit human `APPROVE` or `REDUCE` decision.
+Personal stdio MCP server for the canonical Doctore betting research pipeline. It never places bets automatically. Logging requires a deterministic `BET` decision and explicit human approval or stake reduction.
 
 ## Architecture
 
 ```text
-Pinnacle table / versioned model artifact / portfolio / risk policy
-                              |
-                              v
-                   doctore_mcp adapters
-                              |
-                              v
-                 src/bet_decision_core.py
-                              |
-                              v
-            BET / WATCH / PASS / BLOCKED + decision_id
-                              |
-                              v
-                 explicit human approval only
+MCP client
+   ↓
+doctor_mcp/server.py          bootstrap + compatibility exports
+   ↓
+doctor_mcp/tools.py           FastMCP tool registration only
+   ├── decision_adapter.py    canonical model/market/portfolio/policy orchestration
+   ├── ledger.py              decision-bound logging and portfolio aggregation
+   ├── settlement.py          closing snapshot, CLV and P/L
+   ├── schemas.py             Pydantic and JSON Schema contracts
+   ├── runtime.py             paths, time parsing, hashes and artifact policy
+   └── pinnacle_parser.py     copied-table normalization
+          ↓
+src/bet_decision_core.py
+   └── src/market_probability.py  public canonical no-vig API
 ```
 
-The MCP layer does not implement separate EV, no-vig, Kelly, domain matching,
-or exposure logic. `doctore_calculate_edge_and_stake` and
-`doctore_evaluate_bet` both call `evaluate_bet_decision()` from the repository.
+`server.py` contains no business functions. EV, no-vig, Kelly, domain matching, drawdown and exposure rules are controlled by the canonical decision core.
 
-## Required environment
+## Environment
 
 | Variable | Required | Purpose |
 |---|---:|---|
-| `DOCTORE_REPO_PATH` | yes | Absolute path to the Doctore repository root |
-| `DOCTORE_BET_LOG` | yes | Private canonical CSV bet log; no sample fallback exists |
-| `DOCTORE_CLOSING_SNAPSHOT_LOG` | no | Closing-snapshot JSONL path; defaults beside the bet log |
-| `DOCTORE_MAX_SNAPSHOT_AGE_MIN` | no | Standalone quality-gate freshness limit, default 5 minutes |
+| `DOCTORE_REPO_PATH` | yes | Absolute repository root |
+| `DOCTORE_BET_LOG` | yes | Private canonical CSV state file; no example fallback |
+| `DOCTORE_CLOSING_SNAPSHOT_LOG` | no | Closing-snapshot JSONL; defaults beside bet log |
+| `DOCTORE_MODEL_ARTIFACT_ROOT` | no | Allowed model-artifact root; defaults to `<repo>/artifacts` |
+| `DOCTORE_MAX_SNAPSHOT_AGE_MIN` | no | Standalone quality-gate age limit; default 5 minutes |
 
-An old bet log with the legacy CSV header is rejected. Migrate it or use a new
-private path. Do not commit bet logs, closing snapshots, bankroll values, model
-artifacts, or review data.
+`prediction_path` is restricted to `DOCTORE_MODEL_ARTIFACT_ROOT` or repository `examples/`. Bet logs, snapshots, bankrolls, model artifacts and review data must not be committed.
 
-## Install
+## Install and start
 
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
-pip install -r doctore_mcp/requirements.txt
-```
-
-## Start
-
-```bash
 export DOCTORE_REPO_PATH="$PWD"
 export DOCTORE_BET_LOG="$HOME/.local/share/doctore/bet-log.csv"
+export DOCTORE_MODEL_ARTIFACT_ROOT="$HOME/.local/share/doctore/artifacts"
 python doctore_mcp/server.py
 ```
 
@@ -60,78 +51,68 @@ python doctore_mcp/server.py
 
 | Tool | Access | Contract |
 |---|---|---|
-| `doctore_parse_pinnacle_table` | read | Header-aware table parser; six selected-side canonical snapshots per game |
-| `doctore_check_data_quality` | read | Stale/future timestamp and odds contradiction gate |
-| `doctore_load_model_prediction` | read | Versioned rich artifact to `doctore.model-output.v1` |
-| `doctore_calculate_edge_and_stake` | read | Canonical no-vig, EV, edge, Kelly and caps through decision core |
-| `doctore_evaluate_bet` | read | Complete canonical decision output plus zero-safe recommended stake |
-| `doctore_log_bet` | write | Recomputes the decision, verifies `decision_id`, and prevents stake increase |
-| `doctore_settle_bet` | write | Exact-domain closing snapshot, CLV and result settlement |
-| `doctore_portfolio_status` | read | Open exposure, P/L, result counts and CLV summaries |
+| `doctore_parse_pinnacle_table` | read | Required explicit `captured_at`; header-aware; six selected-side snapshots per game |
+| `doctore_check_data_quality` | read | Stale/future time, odds-pair completeness and contradiction gate |
+| `doctore_load_model_prediction` | read | Restricted artifact path → canonical model output + schema validation |
+| `doctore_calculate_edge_and_stake` | read | Canonical no-vig, EV, edge, Kelly and portfolio caps |
+| `doctore_evaluate_bet` | read | Full `BET/WATCH/PASS/BLOCKED` decision and zero-safe stake |
+| `doctore_log_bet` | write | Recomputes decision, checks hashes, prevents increase and duplicates |
+| `doctore_settle_bet` | write | Exact-domain close, CLV, result and P/L |
+| `doctore_portfolio_status` | read | Exposure, result counts, P/L and CLV summaries |
 
-All tools return structured Pydantic/dictionary outputs, not JSON-encoded
-strings.
+All outputs are structured objects, not JSON-encoded strings.
 
-## Parser behavior
+## Baseline and compatibility
 
-The parser:
+The exact original seven-tool session implementation is locked under:
 
-- detects and skips copied browser/header rows;
-- reports every parsed, skipped and rejected row;
-- stores run-line/spread values in the canonical top-level `line` field;
-- emits separate selected-side snapshots while retaining all outcomes for
-  no-vig calculation;
-- includes scheduled time and the Pinnacle numeric identifier in `event_id`,
-  preventing same-team doubleheader collisions.
-
-## Logging controls
-
-`doctore_log_bet` requires:
-
-1. the original canonical evaluation inputs;
-2. the returned canonical decision output;
-3. `decision == BET`;
-4. a human decision of `APPROVE` or `REDUCE`;
-5. an approved stake not exceeding the canonical recommendation;
-6. a previously unused `decision_id`.
-
-The tool reruns `evaluate_bet_decision()` and requires byte-equivalent structured
-output. A caller cannot convert `PASS`/`BLOCKED` into a logged bet by editing the
-response payload.
-
-## Settlement and CLV
-
-`doctore_settle_bet` requires a complete canonical closing market snapshot. It
-checks event, market, sport, competition, market type, target market, period,
-line, settlement rules, selection, book, selected price and event timing.
-
-It stores:
-
-- closing decimal odds;
-- closing no-vig probability;
-- price CLV: `odds_taken / closing_odds - 1`;
-- probability CLV: `closing_no_vig_probability - no_vig_probability_at_bet`;
-- result and realized P/L;
-- a SHA-256 content hash;
-- the complete snapshot in append-only JSONL.
-
-Identical settlement retries are idempotent. Conflicting second settlements are
-rejected.
-
-## Tests
-
-Repository tests:
-
-```bash
-python -m unittest tests/test_doctore_mcp.py
+```text
+doctor_mcp/baseline/session_v1/
 ```
 
-Real MCP Inspector CLI smoke suite for all eight tools:
+Verify it with:
 
 ```bash
+python doctore_mcp/baseline/session_v1/materialize.py --verify-only
+```
+
+Tool-level input/output differences and classifications are documented in:
+
+```text
+doctor_mcp/compatibility/tool_contract_diff.md
+doctor_mcp/compatibility/golden_fixtures.json
+tests/test_doctore_mcp_differential.py
+```
+
+A difference not explicitly classified in the compatibility document is treated as a regression.
+
+## Parser guarantees
+
+- copied headers are skipped and diagnosed;
+- every source row is `PARSED`, `SKIPPED` or `REJECTED`;
+- run-line/spread handicap is stored in top-level `line`;
+- selected-side snapshots retain the complete outcome set for no-vig;
+- event identity includes sport, scheduled time and Pinnacle identifier;
+- decimal odds must be greater than 1;
+- `captured_at` is required so the read tool is actually idempotent.
+
+## Human-in-the-loop controls
+
+`doctore_log_bet` requires the original evaluation inputs, byte-equivalent canonical decision, `decision == BET`, explicit `APPROVE` or `REDUCE`, an approved stake no larger than the recommendation, and an unused `decision_id`.
+
+`doctore_settle_bet` validates exact event/market/domain/line/selection/book identity and event timing. It records closing odds, closing no-vig probability, price CLV, probability CLV, result, realized P/L, content hash and complete closing snapshot.
+
+## Verification
+
+```bash
+python -m compileall -q src scripts doctore_mcp tests
+python doctore_mcp/baseline/session_v1/materialize.py --verify-only
+python -m unittest discover -s tests -p 'test_*.py' -v
 python doctore_mcp/scripts/run_inspector_smoke.py --repo "$PWD"
 ```
 
-The script pins `@modelcontextprotocol/inspector@0.21.2`, runs `tools/list`, and
-then calls every tool over an actual stdio MCP connection using an isolated
-temporary bet log.
+The Inspector script pins `@modelcontextprotocol/inspector@0.21.2`, runs `tools/list`, and calls all eight tools through a real stdio MCP connection using isolated ledger and artifact paths.
+
+## Blind evaluation gate
+
+No blind evaluation XML is committed until the full unit suite and Inspector **8/8** pass on the same commit. See `doctore_mcp/evaluations/README.md`. Contract-derived cases belong to golden regression tests, not to the blind evaluation.
