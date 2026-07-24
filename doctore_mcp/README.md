@@ -7,9 +7,9 @@ Personal stdio MCP server for the canonical Doctore betting research pipeline. I
 ```text
 MCP client
    ↓
-doctor_mcp/server.py          bootstrap + compatibility exports
+doctore_mcp/server.py          bootstrap + compatibility exports
    ↓
-doctor_mcp/tools.py           FastMCP tool registration only
+doctore_mcp/tools.py           FastMCP tool registration only
    ├── decision_adapter.py    canonical model/market/portfolio/policy orchestration
    ├── ledger.py              decision-bound logging and portfolio aggregation
    ├── settlement.py          closing snapshot, CLV and P/L
@@ -67,7 +67,7 @@ All outputs are structured objects, not JSON-encoded strings.
 The exact original seven-tool session implementation is locked under:
 
 ```text
-doctor_mcp/baseline/session_v1/
+doctore_mcp/baseline/session_v1/
 ```
 
 Verify it with:
@@ -79,8 +79,8 @@ python doctore_mcp/baseline/session_v1/materialize.py --verify-only
 Tool-level input/output differences and classifications are documented in:
 
 ```text
-doctor_mcp/compatibility/tool_contract_diff.md
-doctor_mcp/compatibility/golden_fixtures.json
+doctore_mcp/compatibility/tool_contract_diff.md
+doctore_mcp/compatibility/golden_fixtures.json
 tests/test_doctore_mcp_differential.py
 ```
 
