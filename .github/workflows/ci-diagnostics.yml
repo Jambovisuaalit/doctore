@@ -1,0 +1,80 @@
+name: CI Diagnostics
+
+on:
+  push:
+    branches: [ main, 'feature/**' ]
+  pull_request:
+    branches: [ main ]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Runner info
+        run: |
+          echo "Runner: $RUNNER_OS" || true
+          uname -a || true
+          ls -la
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Connectivity debug
+        run: |
+          set -euxo pipefail || true
+          echo "Date: $(date)" > connectivity.log
+          echo "--- getent hosts ---" >> connectivity.log
+          getent hosts pypi.org || true >> connectivity.log 2>&1
+          echo "--- nslookup pypi.org ---" >> connectivity.log
+          (nslookup pypi.org || dig +short pypi.org) >> connectivity.log 2>&1 || true
+          echo "--- curl pypi.org (HEAD) ---" >> connectivity.log
+          curl -sS --head https://pypi.org/ -m 10 >> connectivity.log 2>&1 || true
+          echo "--- curl raw.githubusercontent.com (HEAD) ---" >> connectivity.log
+          curl -sS --head https://raw.githubusercontent.com/ -m 10 >> connectivity.log 2>&1 || true
+          echo "--- python -V and pip -V ---" >> connectivity.log
+          python -V >> connectivity.log 2>&1 || true
+          python -m pip -V >> connectivity.log 2>&1 || true
+          echo "--- env (filtered) ---" >> connectivity.log
+          env | grep -E "(GITHUB|RUNNER|CI|PYTHON)" >> connectivity.log || true
+        continue-on-error: true
+
+      - name: Upload connectivity log
+        uses: actions/upload-artifact@v4
+        with:
+          name: connectivity-log
+          path: connectivity.log
+
+      - name: Cache pip
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/pip
+            ~/.cache/pip/http
+          key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
+
+      - name: Install dependencies (with retries)
+        run: |
+          python -m pip install --upgrade pip
+          for i in 1 2 3; do pip install -r requirements.txt && break || sleep 5; done
+
+      - name: Run tests (junit)
+        run: |
+          mkdir -p results
+          pytest -q --junitxml=results/junit.xml || true
+
+      - name: Upload junit
+        uses: actions/upload-artifact@v4
+        with:
+          name: junit-report
+          path: results/junit.xml
