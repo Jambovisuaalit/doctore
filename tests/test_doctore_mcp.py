@@ -166,7 +166,9 @@ class McpServerTests(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory()
         os.environ["DOCTORE_REPO_PATH"] = str(ROOT)
         os.environ["DOCTORE_BET_LOG"] = str(Path(self.temp.name) / "bets.csv")
-        sys.modules.pop("doctore_mcp.server", None)
+        for module_name in list(sys.modules):
+            if module_name == "doctore_mcp.server" or module_name.startswith("doctore_mcp."):
+                sys.modules.pop(module_name, None)
         self.server = importlib.import_module("doctore_mcp.server")
         self.evaluation = self.server.DecisionInput(
             model_output=model_output(),
