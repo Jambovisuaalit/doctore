@@ -65,6 +65,13 @@ def _number(value: str) -> float:
     return result
 
 
+def _odds(value: str) -> float:
+    result = _number(value)
+    if result <= 1:
+        raise ValueError("decimal odds must be greater than 1")
+    return result
+
+
 def _handicap(value: str) -> float:
     return float(value.strip().replace("−", "-").replace(",", "."))
 
@@ -237,8 +244,8 @@ def parse_pinnacle_table(
                 book_id=book_id, row_number=row_number,
             )
 
-            ml_away = _number(game["ml_away"])
-            ml_home = _number(game["ml_home"])
+            ml_away = _odds(game["ml_away"])
+            ml_home = _odds(game["ml_home"])
             ml_outcomes = [
                 {"selection": away, "decimal_odds": ml_away},
                 {"selection": home, "decimal_odds": ml_home},
@@ -261,15 +268,15 @@ def parse_pinnacle_table(
             if key in {"mlb", "kbo", "npb"}:
                 away_label = _handicap(game["rl_away_label"])
                 home_label = _handicap(game["rl_home_label"])
-                away_price = _number(game["rl_away_price"])
-                home_price = _number(game["rl_home_price"])
+                away_price = _odds(game["rl_away_price"])
+                home_price = _odds(game["rl_home_price"])
                 spread_type = "run_line"
                 target_market = "full_game_run_line"
             else:
                 away_label = _handicap(game["spread_away_label"])
                 home_label = _handicap(game["spread_home_label"])
-                away_price = _number(game["spread_away_price"])
-                home_price = _number(game["spread_home_price"])
+                away_price = _odds(game["spread_away_price"])
+                home_price = _odds(game["spread_home_price"])
                 spread_type = "spread"
                 target_market = "full_game_spread"
             if not abs(away_label + home_label) < 1e-12:
@@ -294,8 +301,8 @@ def parse_pinnacle_table(
             ])
 
             total_line = _number(game["total_line"])
-            total_over = _number(game["total_over"])
-            total_under = _number(game["total_under"])
+            total_over = _odds(game["total_over"])
+            total_under = _odds(game["total_under"])
             total_outcomes = [
                 {"selection": "over", "decimal_odds": total_over},
                 {"selection": "under", "decimal_odds": total_under},
