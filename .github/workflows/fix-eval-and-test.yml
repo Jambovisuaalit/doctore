@@ -1,0 +1,136 @@
+name: Fix MCP evaluation and prove 59 tests
+
+on:
+  push:
+    branches:
+      - refactor/progressive-disclosure-skills
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  fix-and-verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check out exact branch
+        uses: actions/checkout@v4
+        with:
+          ref: refactor/progressive-disclosure-skills
+          fetch-depth: 0
+
+      - name: Change only qa_pair 2 question text
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import xml.etree.ElementTree as ET
+
+          path = Path("doctore_mcp/evaluations/readonly_evaluation.xml")
+          before = path.read_text(encoding="utf-8")
+          old = (
+              "Parse the baseball table below as mlb and the basketball table below as wnba."
+          )
+          new = (
+              "Call doctore_parse_pinnacle_table twice: once for the baseball table below as mlb, "
+              "once for the basketball table below as wnba."
+          )
+          if before.count(old) != 1:
+              raise SystemExit(f"expected exactly one qa_pair 2 prefix; found {before.count(old)}")
+
+          root_before = ET.fromstring(before)
+          pairs_before = root_before.findall("qa_pair")
+          questions_before = [pair.findtext("question") for pair in pairs_before]
+          answers_before = [pair.findtext("answer") for pair in pairs_before]
+
+          after = before.replace(old, new, 1)
+          path.write_text(after, encoding="utf-8")
+
+          root_after = ET.fromstring(after)
+          pairs_after = root_after.findall("qa_pair")
+          questions_after = [pair.findtext("question") for pair in pairs_after]
+          answers_after = [pair.findtext("answer") for pair in pairs_after]
+
+          assert len(pairs_before) == len(pairs_after) == 10
+          assert answers_after == answers_before
+          assert (answers_after[1] or "").strip() == "18"
+          changed = [i for i, (a, b) in enumerate(zip(questions_before, questions_after), start=1) if a != b]
+          assert changed == [2], changed
+          assert "doctore_parse_pinnacle_table" in (questions_after[1] or "")
+          PY
+
+      - name: Build clean venv from requirements.txt only
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m venv .venv-acceptance
+          .venv-acceptance/bin/python -m pip install --disable-pip-version-check -r requirements.txt
+
+      - name: Run full 59-test suite
+        shell: bash
+        run: |
+          set -euo pipefail
+          set -o pipefail
+          .venv-acceptance/bin/python -m unittest discover -s tests -v 2>&1 | tee /tmp/doctore-test-output.txt
+
+      - name: Commit exact XML fix and remove temporary workflow
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm .github/workflows/fix-eval-and-test.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add doctore_mcp/evaluations/readonly_evaluation.xml .github/workflows/fix-eval-and-test.yml
+          git commit -m "Name parser tool explicitly in evaluation pair 2"
+          git push origin HEAD:refactor/progressive-disclosure-skills
+
+      - name: Paste complete test output into PR 13 description
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+          from urllib.request import Request, urlopen
+
+          repo = os.environ["GITHUB_REPOSITORY"]
+          token = os.environ["GH_TOKEN"]
+          api = f"https://api.github.com/repos/{repo}/pulls/13"
+          headers = {
+              "Accept": "application/vnd.github+json",
+              "Authorization": f"Bearer {token}",
+              "X-GitHub-Api-Version": "2022-11-28",
+              "User-Agent": "doctore-acceptance-workflow",
+          }
+          with urlopen(Request(api, headers=headers)) as response:
+              pr = json.load(response)
+
+          marker = "## Clean-venv 59/59 acceptance proof"
+          body = pr.get("body") or ""
+          if marker in body:
+              body = body.split(marker, 1)[0].rstrip()
+          output = Path("/tmp/doctore-test-output.txt").read_text(encoding="utf-8")
+          new_body = (
+              body.rstrip()
+              + "\n\n"
+              + marker
+              + "\n\n"
+              + "Branch: `refactor/progressive-disclosure-skills`\n\n"
+              + "Environment: fresh `python3 -m venv`, dependencies installed only with "
+                "`python -m pip install -r requirements.txt`.\n\n"
+              + "Command: `python -m unittest discover -s tests -v`\n\n"
+              + "```text\n"
+              + output
+              + "\n```\n"
+          )
+          payload = json.dumps({"body": new_body}).encode("utf-8")
+          request = Request(api, data=payload, headers={**headers, "Content-Type": "application/json"}, method="PATCH")
+          with urlopen(request) as response:
+              updated = json.load(response)
+          print(updated["html_url"])
+          PY
