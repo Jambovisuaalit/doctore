@@ -10,6 +10,7 @@ import json
 import math
 
 from jsonschema import Draft202012Validator, FormatChecker
+from market_probability import calculate_market_probabilities
 from mlb_context import evaluate_mlb_context
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -176,24 +177,6 @@ def _domain_errors(model, market):
     return list(dict.fromkeys(mismatches))
 
 
-def _no_vig(market):
-    selected = [
-        item for item in market["outcomes"]
-        if item["selection"] == market["selection"]
-    ]
-    if len(selected) != 1:
-        raise ValueError("market selection must occur exactly once")
-    if not math.isclose(
-        selected[0]["decimal_odds"], market["decimal_odds"],
-        rel_tol=0, abs_tol=1e-12,
-    ):
-        raise ValueError("selected outcome odds mismatch")
-    implied = [1 / item["decimal_odds"] for item in market["outcomes"]]
-    total = sum(implied)
-    raw = 1 / market["decimal_odds"]
-    return raw, raw / total, total, total - 1
-
-
 def _floor(amount: float, increment: float) -> float:
     amount = Decimal(str(max(0, amount)))
     increment = Decimal(str(increment))
@@ -259,7 +242,11 @@ def evaluate_bet_decision(
     if _time(market_snapshot["event_start_at"]) <= evaluated:
         blocked.append("EVENT_ALREADY_STARTED")
     try:
-        raw, fair, total, overround = _no_vig(market_snapshot)
+        market_probabilities = calculate_market_probabilities(market_snapshot)
+        raw = market_probabilities["raw_implied_probability"]
+        fair = market_probabilities["no_vig_probability"]
+        total = market_probabilities["market_sum"]
+        overround = market_probabilities["overround"]
     except ValueError as exc:
         blocked.append(
             "SELECTED_PRICE_MISMATCH" if "odds" in str(exc) else "MARKET_INCOMPLETE"
