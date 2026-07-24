@@ -48,10 +48,11 @@ def log_lock() -> Iterator[None]:
         if fcntl is not None:
             fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
         elif msvcrt is not None:  # pragma: no cover - Windows
-            lock_file.seek(0)
+            lock_file.seek(0, os.SEEK_END)
             if lock_file.tell() == 0:
                 lock_file.write(b"0")
                 lock_file.flush()
+            lock_file.seek(0)
             msvcrt.locking(lock_file.fileno(), msvcrt.LK_LOCK, 1)
         try:
             yield
