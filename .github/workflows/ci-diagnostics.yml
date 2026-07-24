@@ -1,80 +1,120 @@
-name: CI Diagnostics
+name: CI Diagnostics and Verification
 
 on:
   push:
-    branches: [ main, 'feature/**' ]
+    branches: [main, 'feature/**', 'fix/**']
   pull_request:
-    branches: [ main ]
+    branches: [main]
+  workflow_dispatch:
 
 permissions:
   contents: read
 
+concurrency:
+  group: doctore-ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
-  test:
+  verification:
     runs-on: ubuntu-latest
     timeout-minutes: 60
+    env:
+      PYTHONDONTWRITEBYTECODE: "1"
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - name: Runner info
-        run: |
-          echo "Runner: $RUNNER_OS" || true
-          uname -a || true
-          ls -la
-
       - name: Set up Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5
         with:
           python-version: '3.11'
 
-      - name: Connectivity debug
-        run: |
-          set -euxo pipefail || true
-          echo "Date: $(date)" > connectivity.log
-          echo "--- getent hosts ---" >> connectivity.log
-          getent hosts pypi.org || true >> connectivity.log 2>&1
-          echo "--- nslookup pypi.org ---" >> connectivity.log
-          (nslookup pypi.org || dig +short pypi.org) >> connectivity.log 2>&1 || true
-          echo "--- curl pypi.org (HEAD) ---" >> connectivity.log
-          curl -sS --head https://pypi.org/ -m 10 >> connectivity.log 2>&1 || true
-          echo "--- curl raw.githubusercontent.com (HEAD) ---" >> connectivity.log
-          curl -sS --head https://raw.githubusercontent.com/ -m 10 >> connectivity.log 2>&1 || true
-          echo "--- python -V and pip -V ---" >> connectivity.log
-          python -V >> connectivity.log 2>&1 || true
-          python -m pip -V >> connectivity.log 2>&1 || true
-          echo "--- env (filtered) ---" >> connectivity.log
-          env | grep -E "(GITHUB|RUNNER|CI|PYTHON)" >> connectivity.log || true
-        continue-on-error: true
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
 
-      - name: Upload connectivity log
+      - name: Runner and connectivity diagnostics
+        id: diagnostics
+        shell: bash
+        run: |
+          set +e
+          {
+            echo "Date: $(date -u --iso-8601=seconds)"
+            echo "Runner: ${RUNNER_OS:-unknown}"
+            uname -a
+            python --version
+            python -m pip --version
+            node --version
+            npm --version
+            echo "--- DNS ---"
+            getent hosts pypi.org
+            getent hosts registry.npmjs.org
+            getent hosts raw.githubusercontent.com
+            echo "--- HTTPS ---"
+            curl --fail --silent --show-error --head --max-time 10 https://pypi.org/
+            curl --fail --silent --show-error --head --max-time 10 https://registry.npmjs.org/
+            curl --fail --silent --show-error --head --max-time 10 https://raw.githubusercontent.com/
+          } > connectivity.log 2>&1
+          exit 0
+
+      - name: Upload connectivity diagnostics
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: connectivity-log
           path: connectivity.log
+          if-no-files-found: error
 
       - name: Cache pip
         uses: actions/cache@v4
         with:
-          path: |
-            ~/.cache/pip
-            ~/.cache/pip/http
-          key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-python-3.11-pip-${{ hashFiles('requirements.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-python-3.11-pip-
 
-      - name: Install dependencies (with retries)
+      - name: Install dependencies with bounded retries
+        shell: bash
         run: |
+          set -euo pipefail
           python -m pip install --upgrade pip
-          for i in 1 2 3; do pip install -r requirements.txt && break || sleep 5; done
+          for attempt in 1 2 3; do
+            if python -m pip install -r requirements.txt; then
+              exit 0
+            fi
+            if [[ "$attempt" -eq 3 ]]; then
+              echo "Dependency installation failed after 3 attempts" >&2
+              exit 1
+            fi
+            sleep 5
+          done
 
-      - name: Run tests (junit)
+      - name: Compile Python sources
+        run: python -m compileall -q src scripts doctore_mcp tests
+
+      - name: Verify locked session MCP baseline
+        run: python doctore_mcp/baseline/session_v1/materialize.py --verify-only
+
+      - name: Run full unit and golden differential suite
+        shell: bash
         run: |
+          set -euo pipefail
           mkdir -p results
-          pytest -q --junitxml=results/junit.xml || true
+          python -m unittest discover -s tests -p 'test_*.py' -v 2>&1 | tee results/unittest.log
 
-      - name: Upload junit
+      - name: Run MCP Inspector 8-of-8 smoke suite
+        shell: bash
+        run: |
+          set -euo pipefail
+          python doctore_mcp/scripts/run_inspector_smoke.py --repo "$PWD" 2>&1 | tee results/inspector.log
+
+      - name: Upload verification logs
+        if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: junit-report
-          path: results/junit.xml
+          name: verification-logs
+          path: results/
+          if-no-files-found: warn
