@@ -1,46 +1,32 @@
-# Doctore MCP read-only evaluations
+# Doctore MCP blind evaluation gate
 
-`readonly_evaluation.xml` contains ten independent, deterministic evaluation tasks for the personal Doctore MCP server.
+No blind MCP evaluation is committed yet.
 
-## Design constraints
+The previous `readonly_evaluation.xml` was removed because it was authored from implementation code and unit-test fixtures. It was a contract regression suite, not a blind evaluation of whether an LLM can use the documented tools effectively.
 
-- Every task uses only read-only tools:
-  - `doctore_parse_pinnacle_table`
-  - `doctore_check_data_quality`
-  - `doctore_load_model_prediction`
-  - `doctore_calculate_edge_and_stake`
-  - `doctore_evaluate_bet`
-- No task calls `doctore_log_bet` or `doctore_settle_bet`.
-- Every answer is one stable value suitable for direct string comparison.
-- Inputs use fixed event dates, snapshots, probabilities, risk policies and portfolio states.
-- Each task is independent and does not rely on a previous task or mutated log state.
-- The suite covers parser identity, snapshot counts, freshness, contradictions, model adaptation, no-vig/Kelly agreement, zero-safe PASS behavior, exact-domain blocking, exposure caps and calibration provenance.
+Regression coverage now lives in:
 
-## Run
+- `doctore_mcp/compatibility/golden_fixtures.json`
+- `doctore_mcp/compatibility/tool_contract_diff.md`
+- `tests/test_doctore_mcp_differential.py`
 
-Run from the repository root. The evaluation harness launches the stdio server; do not start it separately.
+## Preconditions for a new blind evaluation
 
-```bash
-python scripts/evaluation.py \
-  -t stdio \
-  -c python \
-  -a doctore_mcp/server.py \
-  -e DOCTORE_REPO_PATH="$PWD" \
-  -e DOCTORE_BET_LOG="$(mktemp -u)/doctore-eval-bets.csv" \
-  -o doctore_mcp/evaluations/evaluation_report.md \
-  doctore_mcp/evaluations/readonly_evaluation.xml
+A new evaluation XML may be created only after all of the following are evidenced on the same commit:
+
+1. Full repository unit suite passes.
+2. MCP Inspector smoke suite returns `8/8` tools over stdio.
+3. Tool descriptions and generated input/output schemas are frozen for the evaluation run.
+4. The evaluation author inspects only public documentation, tool names, descriptions and schemas—not the MCP implementation source or existing unit fixtures.
+5. Questions are read-only, independent, non-destructive and have stable scalar answers.
+
+## Required evidence
+
+```text
+unit_tests: PASS
+inspector_tools_list: 8/8
+inspector_tools_call: 8/8
+blind_eval_created_after_gate: true
 ```
 
-The harness additionally requires its model-provider API key, for example `ANTHROPIC_API_KEY` when using the reference evaluation script.
-
-## Acceptance targets
-
-| KPI | Target |
-|---|---:|
-| Correct answers | 10/10 |
-| Write-tool calls | 0 |
-| Tasks with exactly one direct-comparison answer | 10/10 |
-| Parser/domain/risk safety cases passed | 100% |
-| Average tool calls per task | at least 2 |
-
-Do not treat the suite as passed until it has been run through an actual MCP client and the generated report confirms all ten answers.
+Until these conditions are met, this directory intentionally contains no evaluation XML.
