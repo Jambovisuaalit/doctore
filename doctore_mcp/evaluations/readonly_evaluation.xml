@@ -8,7 +8,7 @@ Minnesota Twins	Cleveland Guardians	20:10	2.20	1.75	+1.5	1.90	-1.5	2.00	8.0	1.95
       <answer>4</answer>
    </qa_pair>
    <qa_pair>
-      <question>Parse the baseball table below as mlb and the basketball table below as wnba. Use event_date=2026-07-24, timezone_name=Europe/Helsinki, captured_at=2026-07-24T10:00:00+03:00 for both calls. Add the two snapshot_count values. Respond with an integer only.
+      <question>Call doctore_parse_pinnacle_table twice: once for the baseball table below as mlb, once for the basketball table below as wnba. Use event_date=2026-07-24, timezone_name=Europe/Helsinki, captured_at=2026-07-24T10:00:00+03:00 for both calls. Add the two snapshot_count values. Respond with an integer only.
 
 BASEBALL:
 away	home	time	ml_away	ml_home	rl_away_label	rl_away_price	rl_home_label	rl_home_price	total_line	total_over	total_under	btn	href
