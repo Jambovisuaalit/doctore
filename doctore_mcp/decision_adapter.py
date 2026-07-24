@@ -4,10 +4,9 @@ from __future__ import annotations
 from typing import Optional
 import json
 
+from .runtime import MAX_SNAPSHOT_AGE_MINUTES, minutes_since, resolve_artifact_path
 from bet_decision_core import evaluate_bet_decision
 from model_output_adapter import to_model_output_contract
-
-from .runtime import MAX_SNAPSHOT_AGE_MINUTES, minutes_since, resolve_artifact_path
 from .schemas import (
     DecisionInput,
     EdgeAndStakeOutput,
