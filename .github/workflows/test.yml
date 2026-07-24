@@ -48,7 +48,7 @@ jobs:
       - name: Compile Python sources
         run: |
           cd "$DOCTORE_SOURCE"
-          python3 -m compileall -q src scripts tests
+          python3 -m compileall -q src scripts doctore_mcp tests
 
       - name: Run unit tests
         run: |
