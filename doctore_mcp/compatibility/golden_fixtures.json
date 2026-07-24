@@ -1,0 +1,42 @@
+{
+  "schema_version": "doctore.mcp-golden-fixtures.v1",
+  "fixtures": {
+    "pinnacle_one_game": {
+      "sport": "mlb",
+      "event_date": "2026-07-24",
+      "captured_at": "2026-07-24T10:00:00+03:00",
+      "raw_table_without_header": "Minnesota Twins\tCleveland Guardians\t20:10\t2.10\t1.80\t+1.5\t1.85\t-1.5\t2.05\t8.5\t1.91\t1.99\t+10\thttps://www.pinnacle.com/fi/baseball/mlb/1632715441/",
+      "raw_table_with_header": "away\thome\ttime\tml_away\tml_home\trl_away_label\trl_away_price\trl_home_label\trl_home_price\ttotal_line\ttotal_over\ttotal_under\tbtn\thref\nMinnesota Twins\tCleveland Guardians\t20:10\t2.10\t1.80\t+1.5\t1.85\t-1.5\t2.05\t8.5\t1.91\t1.99\t+10\thttps://www.pinnacle.com/fi/baseball/mlb/1632715441/"
+    },
+    "quality_contradiction": {
+      "snapshot_at": "2000-01-01T00:00:00+00:00",
+      "max_age_minutes": 1000000000,
+      "reference_odds": {"Minnesota": 2.28},
+      "current_odds": {"Minnesota": 2.08},
+      "contradiction_threshold_pct": 5.0
+    },
+    "quality_missing_selection": {
+      "snapshot_at": "2000-01-01T00:00:00+00:00",
+      "max_age_minutes": 1000000000,
+      "reference_odds": {"Minnesota": 2.28},
+      "current_odds": {"Cleveland": 1.80},
+      "contradiction_threshold_pct": 5.0
+    },
+    "edge_validated": {
+      "model_probability": 0.60,
+      "offered_odds": 1.90,
+      "calibration_status": "validated",
+      "bankroll": 50000,
+      "expected_baseline_stake": 1944.44,
+      "expected_hardened_stake": 1000.0
+    },
+    "edge_unknown": {
+      "model_probability": 0.60,
+      "offered_odds": 1.90,
+      "calibration_status": "unknown",
+      "bankroll": 50000,
+      "expected_baseline_stake": 777.78,
+      "expected_hardened_stake": 0.0
+    }
+  }
+}

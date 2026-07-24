@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "doctore": {
+      "type": "stdio",
+      "command": "/absolute/path/.venv/bin/python",
+      "args": ["/absolute/path/doctore/doctore_mcp/server.py"],
+      "env": {
+        "DOCTORE_REPO_PATH": "/absolute/path/doctore",
+        "DOCTORE_BET_LOG": "/absolute/private/path/doctore-bet-log.csv"
+      }
+    }
+  }
+}

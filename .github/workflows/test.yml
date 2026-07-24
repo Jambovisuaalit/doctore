@@ -12,7 +12,7 @@ permissions:
 jobs:
   unit-tests:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     env:
       PYTHONDONTWRITEBYTECODE: "1"
       SOURCE_SHA: ${{ github.sha }}
@@ -48,9 +48,19 @@ jobs:
       - name: Compile Python sources
         run: |
           cd "$DOCTORE_SOURCE"
-          python3 -m compileall -q src scripts tests
+          python3 -m compileall -q src scripts doctore_mcp tests
 
-      - name: Run unit tests
+      - name: Verify locked session MCP baseline
+        run: |
+          cd "$DOCTORE_SOURCE"
+          python3 doctore_mcp/baseline/session_v1/materialize.py --verify-only
+
+      - name: Run unit and golden differential tests
         run: |
           cd "$DOCTORE_SOURCE"
           python3 -m unittest discover -s tests -p 'test_*.py' -v
+
+      - name: Run MCP Inspector 8-of-8 smoke suite
+        run: |
+          cd "$DOCTORE_SOURCE"
+          python3 doctore_mcp/scripts/run_inspector_smoke.py --repo "$DOCTORE_SOURCE"
