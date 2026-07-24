@@ -434,6 +434,9 @@ async def doctore_check_data_quality(params: QualityGateInput) -> QualityGateOut
                 reasons.append(f"current odds missing selection {selection!r}")
                 continue
             current = params.current_odds[selection]
+            if reference <= 1 or current <= 1:
+                reasons.append(f"{selection!r}: decimal odds must be greater than 1")
+                continue
             difference = abs(current - reference) / reference * 100
             if difference > params.contradiction_threshold_pct:
                 reasons.append(
@@ -625,7 +628,7 @@ def _settlement_domain_mismatches(row: Mapping[str, str], snapshot: Mapping[str,
             mismatches.append(key)
     if row.get("line_json"):
         expected_line = _line_from_csv(row["line_json"])
-        if expected_line is not None and snapshot.get("line") != expected_line:
+        if snapshot.get("line") != expected_line:
             mismatches.append("line")
     return mismatches
 
