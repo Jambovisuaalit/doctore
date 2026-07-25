@@ -162,6 +162,7 @@ class SettleBetInput(BaseModel):
     decision_id: str = Field(..., pattern=r"^[a-f0-9]{64}$")
     closing_market_snapshot: dict[str, Any]
     result: SettlementResult
+    tennis_settlement_context: Optional[dict[str, Any]] = None
     settled_at: Optional[str] = None
 
 
@@ -169,10 +170,13 @@ class SettleBetOutput(BaseModel):
     settled: bool
     idempotent_replay: bool
     decision_id: str
+    settlement_status: str
+    exclude_from_clv_aggregation: bool
+    exclude_from_brier_aggregation: bool
     closing_odds: float
     closing_no_vig_probability: float
-    price_clv_pct: float
-    clv_probability_points: float
+    price_clv_pct: Optional[float]
+    clv_probability_points: Optional[float]
     profit_loss: float
     closing_snapshot_sha256: str
     closing_snapshot_log_path: str
