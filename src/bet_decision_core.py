@@ -12,6 +12,7 @@ import math
 from jsonschema import Draft202012Validator, FormatChecker
 from market_probability import calculate_market_probabilities
 from mlb_context import evaluate_mlb_context
+from tennis_context import evaluate_tennis_context
 
 ROOT = Path(__file__).resolve().parents[1]
 FORMULA_VERSION = "doctore.bet-decision-core.v1"
@@ -309,6 +310,23 @@ def evaluate_bet_decision(
         )
         output["context"] = {
             "sport": "MLB", "status": context["status"],
+            "reason_codes": context["reason_codes"],
+        }
+        output["diagnostics"].extend(context.get("diagnostics", []))
+    elif market_snapshot["sport"] == "TENNIS":
+        context = (
+            {"status": "BLOCKED", "reason_codes": ["TENNIS_CONTEXT_MISSING"],
+             "diagnostics": []}
+            if sport_context is None
+            else evaluate_tennis_context(
+                sport_context,
+                market_snapshot=market_snapshot,
+                evaluated_at=evaluated_at,
+                max_age_seconds=freshness.get("tennis_context", freshness["mlb_context"]),
+            )
+        )
+        output["context"] = {
+            "sport": "TENNIS", "status": context["status"],
             "reason_codes": context["reason_codes"],
         }
         output["diagnostics"].extend(context.get("diagnostics", []))
