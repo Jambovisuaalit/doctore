@@ -80,6 +80,8 @@ def _optional_float(value: Any) -> float | None:
 
 def _settlement_policy(row: Mapping[str, str], params: SettleBetInput) -> dict[str, Any]:
     if row.get("sport") == "TENNIS":
+        if params.tennis_settlement_context is None:
+            raise ValueError("tennis_settlement_context with actual match_status is required")
         policy = evaluate_tennis_settlement(params.tennis_settlement_context)
         if policy["settlement_status"] == "void_retirement" and params.result != SettlementResult.VOID:
             raise ValueError("tennis retirement or walkover settlement must use result=void")
@@ -170,6 +172,7 @@ def settle_bet(params: SettleBetInput) -> SettleBetOutput:
             "settlement_status": policy["settlement_status"],
             "exclude_from_clv_aggregation": policy["exclude_from_clv_aggregation"],
             "exclude_from_brier_aggregation": policy["exclude_from_brier_aggregation"],
+            "keep_in_raw_audit_log": policy["keep_in_raw_audit_log"],
             "settlement_reason_codes": policy["reason_codes"],
             "settlement_diagnostics": policy["diagnostics"],
             "tennis_settlement_context": params.tennis_settlement_context,
