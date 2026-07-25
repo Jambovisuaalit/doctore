@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import copy
 import importlib
 import os
 from pathlib import Path
@@ -25,6 +24,12 @@ def context_market_snapshot() -> dict:
     return {
         "event_id": EVENT_ID,
         "event_start_at": "2026-07-25T14:00:00+03:00",
+        "sport": "TENNIS",
+        "competition": "ATP",
+        "market_type": "moneyline",
+        "target_market": "match_moneyline",
+        "period": "full_match",
+        "line": None,
         "selection": "Player One",
         "outcomes": [
             {"selection": "Player One", "decimal_odds": 1.90},
@@ -61,10 +66,10 @@ def tennis_context() -> dict:
     }
 
 
-def evaluate_context(context: dict) -> dict:
+def evaluate_context(context: dict, market: dict | None = None) -> dict:
     return evaluate_tennis_context(
         context,
-        market_snapshot=context_market_snapshot(),
+        market_snapshot=market or context_market_snapshot(),
         evaluated_at=EVALUATED_AT,
         max_age_seconds=900,
     )
@@ -236,6 +241,14 @@ class TennisContextTests(unittest.TestCase):
         self.assertEqual("BLOCKED", result["status"])
         self.assertIn("EVENT_ALREADY_STARTED", result["reason_codes"])
 
+    def test_mismatched_market_is_blocked_without_correction(self) -> None:
+        market = context_market_snapshot()
+        market["target_market"] = "set_moneyline"
+        result = evaluate_context(tennis_context(), market)
+        self.assertEqual("BLOCKED", result["status"])
+        self.assertIn("TENNIS_MARKET_SCOPE_MISMATCH", result["reason_codes"])
+        self.assertEqual("set_moneyline", market["target_market"])
+
     def test_retirement_settlement_is_excluded_but_audited(self) -> None:
         result = evaluate_tennis_settlement({"match_status": "retirement"})
         self.assertEqual("void_retirement", result["settlement_status"])
@@ -293,8 +306,7 @@ class TennisSettlementIntegrationTests(unittest.TestCase):
             os.environ["DOCTORE_BET_LOG"] = self.previous_log
         self.temp.cleanup()
 
-    def test_retirement_is_void_and_excluded_in_real_settlement_path(self) -> None:
-        decision_id = "a" * 64
+    def _write_open_tennis_row(self, decision_id: str) -> None:
         row = dict.fromkeys(self.ledger.BET_LOG_FIELDS, "")
         row.update({
             "logged_at": "2026-07-25T12:01:00+03:00",
@@ -323,6 +335,22 @@ class TennisSettlementIntegrationTests(unittest.TestCase):
         })
         self.ledger.write_bet_rows([row])
 
+    def test_tennis_settlement_requires_actual_match_status(self) -> None:
+        decision_id = "b" * 64
+        self._write_open_tennis_row(decision_id)
+        closing = canonical_market_snapshot(captured_at="2026-07-25T13:59:00+03:00")
+        with self.assertRaisesRegex(ValueError, "actual match_status is required"):
+            self.settlement.settle_bet(self.schemas.SettleBetInput(
+                decision_id=decision_id,
+                closing_market_snapshot=closing,
+                result="void",
+                settled_at="2026-07-25T16:00:00+03:00",
+            ))
+
+    def test_retirement_is_void_and_excluded_in_real_settlement_path(self) -> None:
+        decision_id = "a" * 64
+        self._write_open_tennis_row(decision_id)
+
         closing = canonical_market_snapshot(captured_at="2026-07-25T13:59:00+03:00")
         result = self.settlement.settle_bet(self.schemas.SettleBetInput(
             decision_id=decision_id,
@@ -341,6 +369,7 @@ class TennisSettlementIntegrationTests(unittest.TestCase):
         raw_records = self.settlement.closing_records()
         self.assertEqual(1, len(raw_records))
         self.assertEqual("void_retirement", raw_records[0]["settlement_status"])
+        self.assertTrue(raw_records[0]["keep_in_raw_audit_log"])
         self.assertIsNotNone(raw_records[0]["raw_price_clv_pct"])
         self.assertIsNotNone(raw_records[0]["raw_clv_probability_points"])
         self.assertEqual({"match_status": "retirement"}, raw_records[0]["tennis_settlement_context"])
