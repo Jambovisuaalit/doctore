@@ -104,6 +104,25 @@ def evaluate_tennis_context(
     if context["validation_policy"]["retirements"] != "excluded_from_initial_validation":
         blocked.append("TENNIS_RETIREMENT_POLICY_MISMATCH")
 
+    expected_market_scope = {
+        "sport": "TENNIS",
+        "competition": "ATP",
+        "market_type": "moneyline",
+        "target_market": "match_moneyline",
+        "period": "full_match",
+        "line": None,
+    }
+    market_scope_mismatches = [
+        key
+        for key, expected in expected_market_scope.items()
+        if market_snapshot.get(key) != expected
+    ]
+    if market_scope_mismatches:
+        blocked.append("TENNIS_MARKET_SCOPE_MISMATCH")
+        diagnostics.append(
+            "tennis market scope mismatch: " + ", ".join(market_scope_mismatches)
+        )
+
     players = context["players"]
     player_ids = {
         players["player_one"]["player_id"],
@@ -160,14 +179,14 @@ def evaluate_tennis_context(
 
 
 def evaluate_tennis_settlement(
-    actual_match_result: Mapping[str, Any] | None,
+    actual_match_result: Mapping[str, Any],
 ) -> dict[str, Any]:
     """Classify tennis settlement without changing the pre-bet context gate.
 
     Retirement and walkover records remain in the raw audit trail but are
     explicitly excluded from CLV and Brier aggregation for the initial model.
     """
-    status = "completed" if actual_match_result is None else actual_match_result.get("match_status")
+    status = actual_match_result.get("match_status")
     if status not in {"completed", "retirement", "walkover"}:
         raise ValueError("tennis settlement match_status must be completed, retirement, or walkover")
 
@@ -178,5 +197,5 @@ def evaluate_tennis_settlement(
         "exclude_from_brier_aggregation": excluded,
         "keep_in_raw_audit_log": True,
         "reason_codes": ["TENNIS_RETIREMENT_OR_WALKOVER"] if excluded else [],
-        "diagnostics": [] if actual_match_result is None else [f"actual_match_status={status}"],
+        "diagnostics": [f"actual_match_status={status}"],
     }
