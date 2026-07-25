@@ -298,6 +298,21 @@ def evaluate_bet_decision(
     output["model"]["probability_used_for_economics"] = _round(probability)
     output["model"]["sizing_probability"] = _round(sizing_probability)
 
+    odds = market_snapshot["decimal_odds"]
+    break_even = 1 / odds
+    ev = probability * odds - 1
+    edge_market = probability - fair
+    full_kelly = max(0, (sizing_probability * odds - 1) / (odds - 1))
+    output["economics"].update({
+        "break_even_probability": _round(break_even),
+        "ev": _round(ev),
+        "edge_vs_break_even_pp": _round(probability - break_even),
+        "edge_vs_market_pp": _round(edge_market),
+        "break_even_odds": _round(1 / probability),
+        "minimum_qualifying_odds": _round((1 + risk_policy["minimum_ev"]) / probability),
+        "full_kelly": _round(full_kelly),
+    })
+
     if market_snapshot["sport"] == "MLB":
         context = (
             {"sport": "MLB", "status": "BLOCKED",
@@ -331,20 +346,6 @@ def evaluate_bet_decision(
         }
         output["diagnostics"].extend(context.get("diagnostics", []))
 
-    odds = market_snapshot["decimal_odds"]
-    break_even = 1 / odds
-    ev = probability * odds - 1
-    edge_market = probability - fair
-    full_kelly = max(0, (sizing_probability * odds - 1) / (odds - 1))
-    output["economics"].update({
-        "break_even_probability": _round(break_even),
-        "ev": _round(ev),
-        "edge_vs_break_even_pp": _round(probability - break_even),
-        "edge_vs_market_pp": _round(edge_market),
-        "break_even_odds": _round(1 / probability),
-        "minimum_qualifying_odds": _round((1 + risk_policy["minimum_ev"]) / probability),
-        "full_kelly": _round(full_kelly),
-    })
     failed = []
     if ev < risk_policy["minimum_ev"]:
         failed += ["EV_BELOW_MINIMUM", "PRICE_BELOW_MINIMUM"]
