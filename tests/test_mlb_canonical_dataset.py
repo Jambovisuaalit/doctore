@@ -84,6 +84,23 @@ class CanonicalDatasetTests(unittest.TestCase):
         np.testing.assert_allclose(predictions[2:4], [1.0, 1.0])
         np.testing.assert_allclose(predictions[4:6], [5.5, 5.5])
 
+    def test_unpriced_schedule_games_enter_future_history(self):
+        from mlb_canonical_dataset import JoinedGame
+        from mlb_canonical_dataset_history import build_canonical_rows_with_schedule
+        schedule = []
+        for day in range(1, 22):
+            d = date(2021, 4, day)
+            schedule.append(ScheduleGame(
+                day, d, f"2021-04-{day:02d}T18:00:00Z",
+                112, 138, 4, 3, 1, 9, "Final",
+            ))
+        joined = [JoinedGame(schedule[-1], 8.0, 1.91, 1.91, 100, 101)]
+        rows, audit = build_canonical_rows_with_schedule(joined, schedule)
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["away_games_prior"], 20.0)
+        self.assertEqual(rows[0]["home_games_prior"], 20.0)
+        self.assertEqual(audit["authoritative_history_games_used"], 21)
+
     def test_same_day_results_are_not_added_mid_group(self):
         joined = []
         for day in range(1, 21):
