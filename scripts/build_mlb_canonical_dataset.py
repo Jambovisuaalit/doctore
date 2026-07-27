@@ -13,12 +13,12 @@ sys.path.insert(0, str(ROOT / "src"))
 
 from mlb_canonical_dataset import (
     DatasetBuildError,
-    build_canonical_rows,
     join_odds_to_schedule,
     parse_odds_csv,
     parse_statsapi_schedule,
     write_dataset_bundle,
 )
+from mlb_canonical_dataset_history import build_canonical_rows_with_schedule
 
 
 def parse_args() -> argparse.Namespace:
@@ -44,7 +44,11 @@ def main() -> None:
     odds, odds_audit = parse_odds_csv(args.odds_csv)
     schedule = parse_statsapi_schedule(args.schedule_json)
     joined, join_audit = join_odds_to_schedule(odds, schedule)
-    rows, feature_audit = build_canonical_rows(joined)
+    if join_audit["unmatched_odds_source_lines"]:
+        raise DatasetBuildError(
+            f"unmatched odds rows remain: {len(join_audit['unmatched_odds_source_lines'])}"
+        )
+    rows, feature_audit = build_canonical_rows_with_schedule(joined, schedule)
     created_at = datetime.now(timezone.utc).isoformat()
     result = write_dataset_bundle(
         rows=rows,
