@@ -1,0 +1,27 @@
+{
+  "schema_version": "doctore.mlb-odds-source-manifest.v1",
+  "source_id": "kaggle:christophertreasure/major-league-baseball-vegas-data:v13",
+  "local_drive_file_id": "1t8xYsGvhwh0JkbzOORkEqqcvcmVkwdrdkK_Cb3-31D4",
+  "local_drive_revision_id": "4",
+  "local_artifact_sha256": "cc7bfb3ea16ee18d70c539217de64e1d2853a26b842b94dfadca073ea7e2e1a4",
+  "coverage": {
+    "start_date": "2012-03-28",
+    "end_date": "2021-10-03",
+    "row_count_excluding_header": 45530
+  },
+  "odds_snapshot_provenance": "documented_pre_game_closing_line",
+  "odds_semantics": "closing_line",
+  "bookmaker_scope": "unknown_or_aggregated",
+  "row_level_captured_at": null,
+  "license_status": "research_use_pending_license_review",
+  "reference_urls": [
+    "https://www.kaggle.com/datasets/christophertreasure/major-league-baseball-vegas-data/versions/13",
+    "https://rstudio-pubs-static.s3.amazonaws.com/1155822_192b24e2b58d45bebcc9e820cf1d554c.html"
+  ],
+  "provenance_audit_path": "docs/audits/mlb-odds-provenance-2026-07-27.json",
+  "restrictions": [
+    "Do not label the prices as Pinnacle-specific.",
+    "Do not infer an intraday captured_at timestamp.",
+    "Do not redistribute commercially before license review."
+  ]
+}
