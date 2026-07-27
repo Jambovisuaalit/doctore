@@ -1,0 +1,31 @@
+{
+  "gameData": {
+    "game": {"pk": 123456, "gameNumber": 1},
+    "datetime": {"officialDate": "2026-07-27", "dateTime": "2026-07-27T23:10:00Z"},
+    "teams": {"away": {"id": 147}, "home": {"id": 111}},
+    "status": {"detailedState": "Final"},
+    "probablePitchers": {
+      "away": {"id": 90, "fullName": "Away Starter"},
+      "home": {"id": 91, "fullName": "Home Starter"}
+    }
+  },
+  "liveData": {
+    "boxscore": {
+      "teams": {
+        "away": {"players": {
+          "ID10": {"person": {"id": 10, "fullName": "Away Batter"}, "battingOrder": "100", "stats": {"pitching": {"gamesStarted": 0}}},
+          "ID90": {"person": {"id": 90, "fullName": "Away Starter"}, "stats": {"pitching": {"gamesStarted": 1}}}
+        }},
+        "home": {"players": {
+          "ID20": {"person": {"id": 20, "fullName": "Home Batter"}, "battingOrder": "100", "stats": {"pitching": {"gamesStarted": 0}}},
+          "ID91": {"person": {"id": 91, "fullName": "Home Starter"}, "stats": {"pitching": {"gamesStarted": 1}}}
+        }}
+      }
+    },
+    "plays": {"allPlays": [{
+      "about": {"atBatIndex": 0, "isComplete": true, "inning": 1, "halfInning": "top", "outs": 0, "startTime": "2026-07-27T23:12:00Z", "endTime": "2026-07-27T23:14:00Z"},
+      "matchup": {"batter": {"id": 10, "fullName": "Away Batter"}, "pitcher": {"id": 91, "fullName": "Home Starter"}, "batSide": {"code": "L"}, "pitchHand": {"code": "R"}},
+      "result": {"event": "Single", "eventType": "single"}
+    }]}
+  }
+}
