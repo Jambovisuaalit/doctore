@@ -1,0 +1,97 @@
+{
+  "decision": "BLOCKED",
+  "generated_at": "2026-07-27T00:00:00+03:00",
+  "overlap": {
+    "odds_vs_clean_mlb_dates": 0,
+    "odds_vs_raw_legacy_dates": 0
+  },
+  "reason_codes": [
+    "NO_COMMON_EVENT_DATE_RANGE",
+    "ODDS_ROWS_MISSING_OPPONENT_AND_EVENT_ID",
+    "ODDS_SNAPSHOT_TIMESTAMP_MISSING",
+    "POINT_IN_TIME_FEATURE_TABLE_MISSING_FOR_ODDS_PERIOD",
+    "RAW_RESULTS_NOT_CANONICAL"
+  ],
+  "required_next_source": {
+    "feature_policy": "prior completed games only; no same-day game outcomes; group identical cutoff timestamps",
+    "odds_provenance_contract": "row-level captured_at or documented closing-line semantics known to be pregame",
+    "official_schedule_cache": "MLB StatsAPI schedule JSON for 2012-2021 with gamePk, teams, start time, game number and final scores"
+  },
+  "schema_version": "doctore.mlb-source-audit.v1",
+  "sources": {
+    "all_data_mlb": {
+      "assessment": "team-level aggregate snapshot, not a point-in-time event feature table",
+      "drive_id": "1hSv3CuAk7cc3YHr2ECgkaQPXqbeJgKX8LGiU39BfTPg",
+      "event_grain": false,
+      "first_sheet_rows": 33,
+      "local_sha256": "07a7e0e82abe208a2c764ada8fd83cf6ef36c3c9ec914ab467b07fd8818c46cc",
+      "observation_timestamp_present": false,
+      "sheets": 5,
+      "title": "all_data_mlb"
+    },
+    "clean_mlb_data": {
+      "assessment": "2023 game outcomes plus mostly prior-season aggregates; not joinable to 2012-2021 odds",
+      "corrupted_or_overwritten_top_rows": 20,
+      "date_max": "2023-10-01",
+      "date_min": "2023-03-31",
+      "drive_id": "1sR8AukWXIxS2bybLGkL0myLf0tyhsziJ_Apxn5E6Rf0",
+      "event_grain": true,
+      "feature_cutoff_present": false,
+      "local_sha256": "a082f01e61595e5a53c63144a45085a9d39e49517f20846a97c4d88c4c287176",
+      "market_line_present": false,
+      "odds_present": false,
+      "salvageable_game_rows": 2444,
+      "title": "Clean_MLB_Data.csv",
+      "worksheet_rows": 2464
+    },
+    "historical_odds": {
+      "assessment": "usable only after deterministic official-schedule resolution and source-level odds snapshot provenance",
+      "captured_at_present": false,
+      "columns": [
+        "date",
+        "at",
+        "team",
+        "gameNumber",
+        "line",
+        "runLine",
+        "runLineOdds",
+        "total",
+        "overOdds",
+        "underOdds"
+      ],
+      "date_max": "2021-10-03",
+      "date_min": "2012-03-28",
+      "drive_id": "1t8xYsGvhwh0JkbzOORkEqqcvcmVkwdrdkK_Cb3-31D4",
+      "event_id_present": false,
+      "local_sha256": "cc7bfb3ea16ee18d70c539217de64e1d2853a26b842b94dfadca073ea7e2e1a4",
+      "opponent_present": false,
+      "row_count": 45530,
+      "title": "MLB ODDS DATA 2023",
+      "years": {
+        "2012": 4860,
+        "2013": 4862,
+        "2014": 4860,
+        "2015": 4858,
+        "2016": 4856,
+        "2017": 4860,
+        "2018": 4862,
+        "2019": 4858,
+        "2020": 1796,
+        "2021": 4858
+      }
+    },
+    "raw_legacy_results": {
+      "assessment": "semi-structured scrape; 2025 only; requires parser and official gamePk reconciliation",
+      "boxscore_rows": 1174,
+      "date_headers": 122,
+      "date_max": "2025-07-23",
+      "date_min": "2025-03-18",
+      "drive_id": "1ekRAV49l5fvWxSPHQW6wGhraD7TYk9i8OrBi6a8YGPo",
+      "event_id_present": false,
+      "local_sha256": "74affb255a89e80fb13ad1059c8caf7afecbcf92703c10cacd4031df8584d560",
+      "preview_rows": 362,
+      "title": "RAW_LEGACY — MLB Games Scrape — 2025",
+      "worksheet_rows": 3547
+    }
+  }
+}
