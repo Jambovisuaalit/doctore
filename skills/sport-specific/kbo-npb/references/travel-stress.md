@@ -7,6 +7,10 @@ causal estimate and must not directly negotiate or overwrite model probability,
 EV, edge, or Kelly. Retain it as a model feature only after locked chronological
 ablation testing.
 
+For the team-level travel + bullpen composite, also read `bullpen-stress.md` and
+use `src/kbo_stress_index.py`. The standalone travel index remains unchanged for
+backward compatibility and for separate starting-pitcher travel analysis.
+
 ## KBO-specific assumptions
 
 - All domestic KBO venues use `Asia/Seoul`; timezone and east/west circadian
@@ -127,6 +131,9 @@ starter: Busan → Seoul earlier by KTX
 The starter may receive the KTX coefficient. The lineup and bullpen retain the
 team-bus coefficient. Do not average these into one undocumented score.
 
+Only `team_travel_stress` may enter `doctore.kbo-stress-index.v2`. Starter travel
+remains an independent feature and cannot offset bullpen workload.
+
 ## Point-in-time rules
 
 - Use the latest completed prior game with `completed_at < feature_cutoff_at`.
@@ -141,8 +148,10 @@ team-bus coefficient. Do not average these into one undocumented score.
 ```text
 M0: current KBO model
 M1: M0 + transparent travel primitives
-M2: M0 + composite stress_index
-R1–R20: M0 + synthetic random control feature
+M2: M0 + travel_stress_index
+M3: M0 + bullpen_stress_index
+M4: M0 + combined stress_index v2
+R1–R20: matching synthetic random control features
 ```
 
 Retain the composite only if it improves unchanged chronological OOS Brier or
