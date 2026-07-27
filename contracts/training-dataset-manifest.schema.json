@@ -65,7 +65,9 @@
     "over_odds_column": {"type": "string", "minLength": 1},
     "under_odds_column": {"type": "string", "minLength": 1},
     "timestamp_column": {"type": "string", "minLength": 1},
-    "sort_order": {"const": "timestamp_strictly_ascending"},
+    "sort_order": {
+      "enum": ["timestamp_strictly_ascending", "timestamp_nondecreasing_grouped"]
+    },
     "source_manifest": {"type": "string", "minLength": 1},
     "notes": {"type": "string"}
   },
