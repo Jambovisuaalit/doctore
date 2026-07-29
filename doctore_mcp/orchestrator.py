@@ -11,6 +11,13 @@ from typing import Any, Awaitable, Callable, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from .governance import (
+    append_decision_bundle,
+    build_decision_bundle,
+    runtime_provenance,
+    validate_market_governance,
+)
+from .runtime import content_sha256
 from .schemas import (
     DecisionInput,
     HumanDecision,
@@ -63,23 +70,27 @@ class SlateRunInput(BaseModel):
 
 
 class SlateItemResult(BaseModel):
-    schema_version: str = "doctore.slate-item.v1"
+    schema_version: str = "doctore.slate-item.v2"
     market_id: str
     status: str
     reason_codes: list[str]
     parser_snapshot_found: bool
+    governance: Optional[dict[str, Any]] = None
     quality: Optional[dict[str, Any]] = None
     model: Optional[dict[str, Any]] = None
     edge_and_stake: Optional[dict[str, Any]] = None
     evaluation: Optional[dict[str, Any]] = None
     approval: Optional[dict[str, Any]] = None
     log_result: Optional[dict[str, Any]] = None
+    decision_bundle: Optional[dict[str, Any]] = None
 
 
 class SlateRunOutput(BaseModel):
-    schema_version: str = "doctore.slate-run.v1"
+    schema_version: str = "doctore.slate-run.v2"
+    run_id: str
     run_status: str
     generated_at: str
+    runtime_provenance: dict[str, Any]
     parser: dict[str, Any]
     portfolio_before: dict[str, Any]
     items: list[SlateItemResult]
@@ -116,7 +127,17 @@ class SlateOrchestrator:
 
     async def run(self, params: SlateRunInput) -> SlateRunOutput:
         evaluated_at = params.evaluated_at or datetime.now(timezone.utc).isoformat()
+        run_id = content_sha256(
+            {
+                "sport": params.sport,
+                "event_date": params.event_date,
+                "captured_at": params.captured_at,
+                "evaluated_at": evaluated_at,
+                "market_ids": [market.market_id for market in params.markets],
+            }
+        )
         approvals = {item.decision_id: item for item in params.approvals}
+        provenance = runtime_provenance()
 
         parser_output = await self.parse_pinnacle_table(
             ParsePinnacleInput(
@@ -154,6 +175,25 @@ class SlateOrchestrator:
                 )
                 continue
 
+            governance_result = validate_market_governance(
+                prediction_path=market.prediction_path,
+                sport=params.sport,
+                competition=market.competition,
+                target_market=market.target_market,
+                market_snapshot=market.market_snapshot,
+            )
+            if not governance_result.ok:
+                results.append(
+                    SlateItemResult(
+                        market_id=market.market_id,
+                        status="REJECTED",
+                        reason_codes=governance_result.reason_codes,
+                        parser_snapshot_found=True,
+                        governance=governance_result.governance,
+                    )
+                )
+                continue
+
             quality_output = await self.check_data_quality(
                 QualityGateInput(
                     snapshot_at=params.captured_at,
@@ -173,6 +213,7 @@ class SlateOrchestrator:
                         status="REJECTED",
                         reason_codes=reasons or ["DATA_QUALITY_GATE_FAILED"],
                         parser_snapshot_found=True,
+                        governance=governance_result.governance,
                         quality=quality_dict,
                     )
                 )
@@ -194,6 +235,7 @@ class SlateOrchestrator:
                         status="REJECTED",
                         reason_codes=["MODEL_PREDICTION_LOAD_FAILED"],
                         parser_snapshot_found=True,
+                        governance=governance_result.governance,
                         quality=quality_dict,
                         model=model_dict,
                     )
@@ -226,6 +268,7 @@ class SlateOrchestrator:
                 status=decision,
                 reason_codes=reason_codes,
                 parser_snapshot_found=True,
+                governance=governance_result.governance,
                 quality=quality_dict,
                 model=model_dict,
                 edge_and_stake=edge_dict,
@@ -260,6 +303,19 @@ class SlateOrchestrator:
                             str(item.log_result.get("reason") or "LOGGING_REJECTED"),
                         ]
 
+            bundle = build_decision_bundle(
+                run_id=run_id,
+                decision_input=decision_input.model_dump(mode="json"),
+                decision_output=decision_output,
+                governance=governance_result.governance,
+                approval=item.approval,
+                log_result=item.log_result,
+            )
+            append_decision_bundle(bundle)
+            item.decision_bundle = {
+                "schema_version": bundle["schema_version"],
+                "bundle_sha256": bundle["bundle_sha256"],
+            }
             results.append(item)
 
         summary: dict[str, int] = {}
@@ -267,8 +323,10 @@ class SlateOrchestrator:
             summary[item.status] = summary.get(item.status, 0) + 1
 
         return SlateRunOutput(
+            run_id=run_id,
             run_status="COMPLETED",
             generated_at=datetime.now(timezone.utc).isoformat(),
+            runtime_provenance=provenance,
             parser=parser_dict,
             portfolio_before=portfolio_dict,
             items=results,
