@@ -10,6 +10,11 @@ if not __package__:  # direct `python doctore_mcp/server.py`
     import sys
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+from doctore_mcp.context_agents import (  # noqa: E402,F401
+    ContextEvidence,
+    ContextGateInput,
+    ContextGateOutput,
+)
 from doctore_mcp.schemas import (  # noqa: E402,F401
     DecisionInput,
     EdgeAndStakeOutput,
@@ -38,6 +43,7 @@ from doctore_mcp.tools import (  # noqa: E402,F401
     doctore_log_bet,
     doctore_parse_pinnacle_table,
     doctore_portfolio_status,
+    doctore_run_context_gate,
     doctore_settle_bet,
     mcp,
 )
