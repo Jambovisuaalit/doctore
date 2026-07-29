@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from mcp.server.fastmcp import Context, FastMCP
 
+from .context_agents import ContextGateInput, ContextGateOutput, run_context_agent
 from .decision_adapter import (
     calculate_edge_and_stake,
     check_data_quality,
@@ -87,6 +88,12 @@ async def doctore_evaluate_bet(params: DecisionInput, ctx: Context | None = None
         except (RuntimeError, ValueError):
             pass
     return result
+
+
+@mcp.tool(name="doctore_run_context_gate", annotations={"title": "Run sport-specific context gate", "readOnlyHint": True, "destructiveHint": False, "idempotentHint": True, "openWorldHint": True})
+async def doctore_run_context_gate(params: ContextGateInput) -> ContextGateOutput:
+    """Return only CLEAR/WATCH/BLOCKED/UNCERTAIN plus evidence; never modify probability or stake."""
+    return run_context_agent(params)
 
 
 @mcp.tool(name="doctore_log_bet", annotations={"title": "Log a human-approved canonical bet", "readOnlyHint": False, "destructiveHint": False, "idempotentHint": False, "openWorldHint": False})
