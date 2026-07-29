@@ -41,6 +41,7 @@ from doctore_mcp.tools import (  # noqa: E402,F401
     doctore_settle_bet,
     mcp,
 )
+from doctore_mcp.slate_tools import doctore_run_slate  # noqa: E402,F401
 
 
 if __name__ == "__main__":
