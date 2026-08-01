@@ -113,9 +113,12 @@ class SlateOrchestratorTests(unittest.IsolatedAsyncioTestCase):
             reason_codes=[],
             governance={"schema_version": "doctore.governance-result.v1", "test_fixture": True},
         )
-        with patch(
-            "doctore_mcp.orchestrator.validate_market_governance",
-            return_value=approved_governance,
+        # Differential tests intentionally reload doctore_mcp modules. Patch the
+        # exact globals dictionary bound to this imported SlateOrchestrator class,
+        # not a potentially newer module instance in sys.modules.
+        with patch.dict(
+            SlateOrchestrator.run.__globals__,
+            {"validate_market_governance": lambda **_: approved_governance},
         ):
             result = await orchestrator.run(
                 SlateRunInput(
