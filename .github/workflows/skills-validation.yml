@@ -32,7 +32,7 @@ jobs:
   validate:
     name: Validate skills, schemas and tests
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 30
     env:
       PYTHONDONTWRITEBYTECODE: "1"
       SOURCE_SHA: ${{ github.sha }}
@@ -57,16 +57,18 @@ jobs:
           tar -xzf "$archive" -C "$source_dir" --strip-components=1
           echo "DOCTORE_SOURCE=$source_dir" >> "$GITHUB_ENV"
 
-      - name: Install validation dependencies
+      - name: Install full validation and test dependencies
         run: |
+          cd "$DOCTORE_SOURCE"
           python3 -m pip install --disable-pip-version-check \
             "PyYAML==6.0.2" \
-            "jsonschema[format]==4.23.0"
+            "jsonschema[format]==4.23.0" \
+            -r requirements.txt
 
       - name: Compile Python sources
         run: |
           cd "$DOCTORE_SOURCE"
-          python3 -m compileall -q src scripts skills tests
+          python3 -m compileall -q src scripts skills doctore_mcp tests
 
       - name: Validate Agent Skills structure
         run: |
