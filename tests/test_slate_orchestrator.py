@@ -1,7 +1,15 @@
 from __future__ import annotations
 
+import os
+from pathlib import Path
+import tempfile
 import unittest
 from types import SimpleNamespace
+
+ROOT = Path(__file__).resolve().parents[1]
+TEST_BET_LOG = Path(tempfile.gettempdir()) / "doctore-slate-orchestrator-test.csv"
+os.environ.setdefault("DOCTORE_REPO_PATH", str(ROOT))
+os.environ.setdefault("DOCTORE_BET_LOG", str(TEST_BET_LOG))
 
 from doctore_mcp.orchestrator import SlateOrchestrator, SlateRunInput
 
@@ -12,6 +20,17 @@ class _Output(SimpleNamespace):
 
 
 class SlateOrchestratorTests(unittest.IsolatedAsyncioTestCase):
+    @classmethod
+    def tearDownClass(cls) -> None:
+        for path in (
+            TEST_BET_LOG,
+            TEST_BET_LOG.with_suffix(".decision-bundles.jsonl"),
+        ):
+            try:
+                path.unlink()
+            except FileNotFoundError:
+                pass
+
     async def test_bet_requires_human_approval_before_logging(self):
         calls = []
 
