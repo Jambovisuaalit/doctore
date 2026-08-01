@@ -65,10 +65,25 @@
     "over_odds_column": {"type": "string", "minLength": 1},
     "under_odds_column": {"type": "string", "minLength": 1},
     "timestamp_column": {"type": "string", "minLength": 1},
-    "sort_order": {"const": "timestamp_strictly_ascending"},
+    "sort_order": {
+      "enum": ["timestamp_strictly_ascending", "timestamp_non_decreasing_grouped"]
+    },
+    "slate_column": {"type": "string", "minLength": 1},
+    "timestamp_semantics": {"type": "string", "minLength": 1},
+    "research_only": {"type": "boolean"},
+    "production_eligible": {"type": "boolean"},
     "source_manifest": {"type": "string", "minLength": 1},
     "notes": {"type": "string"}
   },
+  "allOf": [
+    {
+      "if": {
+        "properties": {"sort_order": {"const": "timestamp_non_decreasing_grouped"}},
+        "required": ["sort_order"]
+      },
+      "then": {"required": ["slate_column"]}
+    }
+  ],
   "$defs": {
     "sha256": {
       "type": "string",

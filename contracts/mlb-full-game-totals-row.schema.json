@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://doctore.local/schemas/mlb-full-game-totals-row.schema.json",
+  "title": "Doctore canonical MLB full-game totals row",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "event_id", "source_game_id", "game_date", "game_number", "away_team",
+    "home_team", "event_start_at", "feature_cutoff_at", "slate_id",
+    "market_timestamp_method", "market_line", "no_vig_over_probability",
+    "market_overround", "over_odds_decimal", "under_odds_decimal", "actual_total"
+  ],
+  "properties": {
+    "event_id": {"type": "string", "pattern": "^mlb_[a-f0-9]{24}$"},
+    "source_game_id": {"type": "string", "minLength": 1},
+    "game_date": {"type": "string", "format": "date"},
+    "game_number": {"type": "integer", "minimum": 1},
+    "away_team": {"type": "string", "minLength": 2},
+    "home_team": {"type": "string", "minLength": 2},
+    "event_start_at": {"type": "string", "format": "date-time"},
+    "feature_cutoff_at": {"type": "string", "format": "date-time"},
+    "slate_id": {"type": "string", "format": "date-time"},
+    "market_timestamp_method": {"type": "string", "minLength": 1},
+    "market_line": {"type": "number", "minimum": 0},
+    "no_vig_over_probability": {"type": "number", "exclusiveMinimum": 0, "exclusiveMaximum": 1},
+    "market_overround": {"type": "number", "minimum": -0.25, "maximum": 1},
+    "over_odds_decimal": {"type": "number", "exclusiveMinimum": 1},
+    "under_odds_decimal": {"type": "number", "exclusiveMinimum": 1},
+    "actual_total": {"type": "integer", "minimum": 0}
+  }
+}
