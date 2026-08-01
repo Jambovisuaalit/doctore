@@ -16,15 +16,17 @@ concurrency:
 
 jobs:
   verification:
+    name: P0 Verification Gate
     runs-on: ubuntu-latest
     timeout-minutes: 60
     env:
       PYTHONDONTWRITEBYTECODE: "1"
     steps:
-      - name: Checkout
+      - name: Checkout exact workflow SHA
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          ref: ${{ github.sha }}
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -42,6 +44,7 @@ jobs:
         run: |
           set +e
           {
+            echo "Commit SHA: ${GITHUB_SHA}"
             echo "Date: $(date -u --iso-8601=seconds)"
             echo "Runner: ${RUNNER_OS:-unknown}"
             uname -a
@@ -64,7 +67,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: connectivity-log
+          name: connectivity-log-${{ github.sha }}
           path: connectivity.log
           if-no-files-found: error
 
@@ -105,16 +108,38 @@ jobs:
           mkdir -p results
           python -m unittest discover -s tests -p 'test_*.py' -v 2>&1 | tee results/unittest.log
 
-      - name: Run MCP Inspector 8-of-8 smoke suite
+      - name: Run MCP Inspector 10-of-10 smoke suite
         shell: bash
         run: |
           set -euo pipefail
           python doctore_mcp/scripts/run_inspector_smoke.py --repo "$PWD" 2>&1 | tee results/inspector.log
+          grep -F "Inspector smoke suite passed: 10/10 expected tools" results/inspector.log
+
+      - name: Record exact-SHA verification evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+          payload = {
+              "schema_version": "doctore.p0-verification.v1",
+              "commit_sha": os.environ["GITHUB_SHA"],
+              "unit_suite": "PASS",
+              "mcp_inspector": "10/10 PASS",
+              "same_sha_verified": True,
+          }
+          Path("results").mkdir(exist_ok=True)
+          Path("results/p0-verification.json").write_text(
+              json.dumps(payload, indent=2, sort_keys=True) + "\n",
+              encoding="utf-8",
+          )
+          PY
 
       - name: Upload verification logs
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: verification-logs
+          name: p0-verification-${{ github.sha }}
           path: results/
           if-no-files-found: warn
