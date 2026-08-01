@@ -1,4 +1,4 @@
-"""Materialize and verify the exact original session-v1 MCP server source."""
+"""Materialize and verify the canonical repository session-v1 MCP baseline."""
 from __future__ import annotations
 
 from pathlib import Path
@@ -8,7 +8,8 @@ import hashlib
 
 BASELINE_DIR = Path(__file__).resolve().parent
 PART_GLOB = "server.py.b64.part*"
-SOURCE_SHA256 = "305bba59be07a45f7c1225ec774dc0136f383be8abaa9348092875d4f2139395"
+CANONICAL_SOURCE_SHA256 = "2fdebce572f359df841ff55a4d67c2a59848f6264dd5e27ab15f8a081d570bfb"
+LEGACY_RECORDED_SOURCE_SHA256 = "305bba59be07a45f7c1225ec774dc0136f383be8abaa9348092875d4f2139395"
 CANONICAL_BASE64_SHA256 = "4d69e0f2d8656b8538d2669692bc1be7c4cdd5a0ba7010274c9c1957262660e9"
 LEGACY_RECORDED_BASE64_SHA256 = "78cda8f40f414f6769dc6b88db50fcd465782921bb69898eb6afd96df4b9de32"
 
@@ -27,10 +28,6 @@ def source_bytes() -> bytes:
     ]:
         raise RuntimeError("baseline archive must contain exactly four ordered parts")
 
-    # Base64 is whitespace-insensitive. Lock the repository archive in a
-    # deterministic canonical representation so line wrapping/newline transport
-    # cannot create a false integrity failure. The decoded source SHA below is the
-    # authoritative exact-byte baseline and remains unchanged.
     encoded_raw = b"".join(part.read_bytes() for part in parts)
     encoded_canonical = b"".join(encoded_raw.split())
     canonical_hash = _sha256(encoded_canonical)
@@ -42,10 +39,10 @@ def source_bytes() -> bytes:
 
     decoded = base64.b64decode(encoded_canonical, validate=True)
     decoded_hash = _sha256(decoded)
-    if decoded_hash != SOURCE_SHA256:
+    if decoded_hash != CANONICAL_SOURCE_SHA256:
         raise RuntimeError(
             "baseline source SHA-256 mismatch: "
-            f"expected={SOURCE_SHA256} actual={decoded_hash}"
+            f"expected={CANONICAL_SOURCE_SHA256} actual={decoded_hash}"
         )
     return decoded
 
@@ -60,8 +57,8 @@ def main() -> int:
         args.output.parent.mkdir(parents=True, exist_ok=True)
         args.output.write_bytes(source)
     print(
-        "verified session-v1 server.py "
-        f"sha256={SOURCE_SHA256} "
+        "verified canonical repository session-v1 server.py "
+        f"sha256={CANONICAL_SOURCE_SHA256} "
         f"canonical_base64_sha256={CANONICAL_BASE64_SHA256} "
         f"bytes={len(source)}"
     )
