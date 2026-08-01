@@ -12,6 +12,10 @@ SOURCE_SHA256 = "305bba59be07a45f7c1225ec774dc0136f383be8abaa9348092875d4f213939
 BASE64_SHA256 = "78cda8f40f414f6769dc6b88db50fcd465782921bb69898eb6afd96df4b9de32"
 
 
+def _sha256(value: bytes) -> str:
+    return hashlib.sha256(value).hexdigest()
+
+
 def source_bytes() -> bytes:
     parts = sorted(BASELINE_DIR.glob(PART_GLOB))
     if [part.name for part in parts] != [
@@ -21,12 +25,30 @@ def source_bytes() -> bytes:
         "server.py.b64.part03",
     ]:
         raise RuntimeError("baseline archive must contain exactly four ordered parts")
-    encoded = b"".join(part.read_bytes() for part in parts)
-    if hashlib.sha256(encoded).hexdigest() != BASE64_SHA256:
-        raise RuntimeError("baseline base64 archive SHA-256 mismatch")
-    decoded = base64.b64decode(encoded, validate=False)
-    if hashlib.sha256(decoded).hexdigest() != SOURCE_SHA256:
-        raise RuntimeError("baseline source SHA-256 mismatch")
+
+    # Base64 is semantically whitespace-insensitive. Repository writes and archive
+    # transports may preserve or normalize wrapping/newline bytes differently, so
+    # accept the locked archive hash in either its raw stored representation or its
+    # canonical whitespace-free representation. The decoded source SHA remains the
+    # final exact-byte integrity gate and is never relaxed.
+    encoded_raw = b"".join(part.read_bytes() for part in parts)
+    encoded_canonical = b"".join(encoded_raw.split())
+    raw_hash = _sha256(encoded_raw)
+    canonical_hash = _sha256(encoded_canonical)
+
+    if BASE64_SHA256 not in {raw_hash, canonical_hash}:
+        raise RuntimeError(
+            "baseline base64 archive SHA-256 mismatch: "
+            f"expected={BASE64_SHA256} raw={raw_hash} canonical={canonical_hash}"
+        )
+
+    decoded = base64.b64decode(encoded_canonical, validate=True)
+    decoded_hash = _sha256(decoded)
+    if decoded_hash != SOURCE_SHA256:
+        raise RuntimeError(
+            "baseline source SHA-256 mismatch: "
+            f"expected={SOURCE_SHA256} actual={decoded_hash}"
+        )
     return decoded
 
 
