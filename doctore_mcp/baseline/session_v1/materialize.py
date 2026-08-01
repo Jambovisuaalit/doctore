@@ -9,7 +9,8 @@ import hashlib
 BASELINE_DIR = Path(__file__).resolve().parent
 PART_GLOB = "server.py.b64.part*"
 SOURCE_SHA256 = "305bba59be07a45f7c1225ec774dc0136f383be8abaa9348092875d4f2139395"
-BASE64_SHA256 = "78cda8f40f414f6769dc6b88db50fcd465782921bb69898eb6afd96df4b9de32"
+CANONICAL_BASE64_SHA256 = "4d69e0f2d8656b8538d2669692bc1be7c4cdd5a0ba7010274c9c1957262660e9"
+LEGACY_RECORDED_BASE64_SHA256 = "78cda8f40f414f6769dc6b88db50fcd465782921bb69898eb6afd96df4b9de32"
 
 
 def _sha256(value: bytes) -> str:
@@ -26,20 +27,17 @@ def source_bytes() -> bytes:
     ]:
         raise RuntimeError("baseline archive must contain exactly four ordered parts")
 
-    # Base64 is semantically whitespace-insensitive. Repository writes and archive
-    # transports may preserve or normalize wrapping/newline bytes differently, so
-    # accept the locked archive hash in either its raw stored representation or its
-    # canonical whitespace-free representation. The decoded source SHA remains the
-    # final exact-byte integrity gate and is never relaxed.
+    # Base64 is whitespace-insensitive. Lock the repository archive in a
+    # deterministic canonical representation so line wrapping/newline transport
+    # cannot create a false integrity failure. The decoded source SHA below is the
+    # authoritative exact-byte baseline and remains unchanged.
     encoded_raw = b"".join(part.read_bytes() for part in parts)
     encoded_canonical = b"".join(encoded_raw.split())
-    raw_hash = _sha256(encoded_raw)
     canonical_hash = _sha256(encoded_canonical)
-
-    if BASE64_SHA256 not in {raw_hash, canonical_hash}:
+    if canonical_hash != CANONICAL_BASE64_SHA256:
         raise RuntimeError(
-            "baseline base64 archive SHA-256 mismatch: "
-            f"expected={BASE64_SHA256} raw={raw_hash} canonical={canonical_hash}"
+            "baseline canonical base64 SHA-256 mismatch: "
+            f"expected={CANONICAL_BASE64_SHA256} actual={canonical_hash}"
         )
 
     decoded = base64.b64decode(encoded_canonical, validate=True)
@@ -61,7 +59,12 @@ def main() -> int:
     if args.output and not args.verify_only:
         args.output.parent.mkdir(parents=True, exist_ok=True)
         args.output.write_bytes(source)
-    print(f"verified session-v1 server.py sha256={SOURCE_SHA256} bytes={len(source)}")
+    print(
+        "verified session-v1 server.py "
+        f"sha256={SOURCE_SHA256} "
+        f"canonical_base64_sha256={CANONICAL_BASE64_SHA256} "
+        f"bytes={len(source)}"
+    )
     return 0
 
 
