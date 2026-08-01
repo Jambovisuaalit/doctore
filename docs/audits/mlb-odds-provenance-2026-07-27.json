@@ -1,0 +1,63 @@
+{
+  "schema_version": "doctore.odds-source-provenance.v1",
+  "assessed_at": "2026-07-27T00:00:00Z",
+  "local_artifact": {
+    "drive_file_id": "1t8xYsGvhwh0JkbzOORkEqqcvcmVkwdrdkK_Cb3-31D4",
+    "drive_title": "MLB ODDS DATA 2023",
+    "drive_revision_id": "4",
+    "drive_revision_modified_at": "2025-06-16T08:10:53.533Z",
+    "downloaded_xlsx_sha256": "cc7bfb3ea16ee18d70c539217de64e1d2853a26b842b94dfadca073ea7e2e1a4",
+    "header": "date,at,team,gameNumber,line,runLine,runLineOdds,total,overOdds,underOdds",
+    "row_count_excluding_header": 45530,
+    "date_min": "2012-03-28",
+    "date_max": "2021-10-03"
+  },
+  "identified_external_source": {
+    "platform": "Kaggle",
+    "dataset_title": "MLB Odds Data",
+    "dataset_slug": "christophertreasure/major-league-baseball-vegas-data",
+    "dataset_version": 13,
+    "author": "Christopher Treasure",
+    "dataset_url": "https://www.kaggle.com/datasets/christophertreasure/major-league-baseball-vegas-data/versions/13",
+    "analysis_url": "https://rstudio-pubs-static.s3.amazonaws.com/1155822_192b24e2b58d45bebcc9e820cf1d554c.html",
+    "documented_coverage": "2012-2021 regular seasons",
+    "documented_odds_semantics": "closing numbers",
+    "documented_markets": [
+      "moneyline",
+      "game_total",
+      "over_odds",
+      "under_odds",
+      "run_line",
+      "run_line_odds"
+    ],
+    "documented_result_source": "Retrosheet",
+    "license_label": "Other (specified in description)"
+  },
+  "identity_evidence": {
+    "exact_header_match": true,
+    "exact_first_six_rows_match_public_analysis": true,
+    "exact_row_count_match_public_analysis": true,
+    "exact_coverage_match": true,
+    "confidence": "HIGH",
+    "remaining_uncertainty": "The local sheet is an odds-only projection of the public dataset; a byte-identical upstream CSV was not available in the execution environment."
+  },
+  "contract_conclusion": {
+    "odds_snapshot_provenance": "documented_pre_game_closing_line",
+    "odds_semantics": "closing_line",
+    "bookmaker_scope": "unknown_or_aggregated",
+    "row_level_captured_at": null,
+    "allowed_claims": [
+      "historical closing-line market baseline",
+      "chronological research using the game date as an atomic cutoff group",
+      "Brier and log-loss comparison against the documented closing market"
+    ],
+    "prohibited_claims": [
+      "Pinnacle-specific pricing",
+      "a single named sportsbook's executable price",
+      "intraday line movement",
+      "row-level pregame capture timestamp",
+      "commercial redistribution before license review"
+    ],
+    "license_status": "research_use_pending_license_review"
+  }
+}

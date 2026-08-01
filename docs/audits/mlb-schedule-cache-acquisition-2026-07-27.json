@@ -1,0 +1,24 @@
+{
+  "schema_version": "doctore.mlb-schedule-acquisition-attempt.v1",
+  "attempted_at": "2026-07-27T00:00:00Z",
+  "requested_years": [2012],
+  "endpoint": "https://statsapi.mlb.com/api/v1/schedule",
+  "implementation": "src/mlb_schedule_cache.py",
+  "cli": "scripts/fetch_mlb_schedule_cache.py",
+  "result": "FAILED_BEFORE_HTTP_RESPONSE",
+  "error_class": "DNS_RESOLUTION_FAILURE",
+  "error": "Temporary failure in name resolution",
+  "http_status_received": false,
+  "payload_received": false,
+  "cache_files_created": 0,
+  "interpretation": "Execution-environment network failure; the MLB payload and endpoint response were not validated by this attempt.",
+  "targeted_local_tests": {
+    "result": "4/4 PASS",
+    "coverage": [
+      "regular-season query contract",
+      "postponed placeholder exclusion",
+      "conflicting duplicate gamePk rejection",
+      "create-only SHA-256 cache and manifest"
+    ]
+  }
+}

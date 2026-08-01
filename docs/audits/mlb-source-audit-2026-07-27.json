@@ -1,0 +1,88 @@
+{
+  "schema_version": "doctore.mlb-source-audit.v1",
+  "assessed_at": "2026-07-27T00:00:00Z",
+  "decision": "BLOCKED",
+  "blocking_gate": "AUTHORITATIVE_SCHEDULE_CACHE_NOT_ACQUIRED",
+  "odds_provenance_gate": {
+    "status": "PASS_WITH_RESTRICTIONS",
+    "provenance": "documented_pre_game_closing_line",
+    "semantics": "closing_line",
+    "bookmaker_scope": "unknown_or_aggregated",
+    "row_level_captured_at": null,
+    "license_status": "research_use_pending_license_review",
+    "evidence_path": "docs/audits/mlb-odds-provenance-2026-07-27.json"
+  },
+  "schedule_cache_gate": {
+    "status": "BLOCKED",
+    "required_years": [2012, 2013, 2014, 2015, 2016, 2017, 2018, 2019, 2020, 2021],
+    "acquisition_implementation": "src/mlb_schedule_cache.py",
+    "cli": "scripts/fetch_mlb_schedule_cache.py",
+    "targeted_tests": "4/4 PASS",
+    "real_download_attempt": "FAILED_BEFORE_HTTP_RESPONSE",
+    "failure_class": "ENVIRONMENT_DNS_RESOLUTION",
+    "cache_generated": false
+  },
+  "sources": {
+    "historical_odds": {
+      "drive_file_id": "1t8xYsGvhwh0JkbzOORkEqqcvcmVkwdrdkK_Cb3-31D4",
+      "drive_title": "MLB ODDS DATA 2023",
+      "local_sha256": "cc7bfb3ea16ee18d70c539217de64e1d2853a26b842b94dfadca073ea7e2e1a4",
+      "rows_excluding_header": 45530,
+      "date_min": "2012-03-28",
+      "date_max": "2021-10-03",
+      "event_identity": "missing_gamePk_requires_schedule_join",
+      "status": "STRUCTURALLY_USABLE"
+    },
+    "clean_mlb_data": {
+      "drive_file_id": "1sR8AukWXIxS2bybLGkL0myLf0tyhsziJ_Apxn5E6Rf0",
+      "salvageable_game_rows": 2444,
+      "date_min": "2023-03-31",
+      "date_max": "2023-10-01",
+      "issues": [
+        "no_date_overlap_with_odds",
+        "no_historical_total_prices",
+        "no_feature_cutoff_at",
+        "early_rows_partially_overwritten"
+      ],
+      "status": "NOT_JOINABLE"
+    },
+    "raw_legacy_results": {
+      "drive_file_id": "1ekRAV49l5fvWxSPHQW6wGhraD7TYk9i8OrBi6a8YGPo",
+      "boxscore_rows": 1174,
+      "date_min": "2025-03-18",
+      "date_max": "2025-07-23",
+      "issues": [
+        "no_date_overlap_with_odds",
+        "semi_structured_scrape",
+        "no_gamePk"
+      ],
+      "status": "NOT_JOINABLE"
+    },
+    "all_data_mlb": {
+      "drive_file_id": "1hSv3CuAk7cc3YHr2ECgkaQPXqbeJgKX8LGiU39BfTPg",
+      "granularity": "team_level_aggregate_snapshot",
+      "issues": [
+        "not_event_level",
+        "not_point_in_time",
+        "cannot_be_backfilled_across_historical_games"
+      ],
+      "status": "REJECT_AS_HISTORICAL_FEATURE_TABLE"
+    }
+  },
+  "required_next_execution": {
+    "command": "python scripts/fetch_mlb_schedule_cache.py --start-year 2012 --end-year 2021 --output-dir data/cache/mlb-schedule-2012-2021",
+    "acceptance": [
+      "ten immutable season JSON files",
+      "ten SHA-256 sidecars",
+      "one immutable schedule-cache manifest",
+      "zero conflicting gamePk records",
+      "zero unmatched structurally valid odds rows after join"
+    ]
+  },
+  "production_outputs": {
+    "canonical_training_csv": "NOT_GENERATED",
+    "dataset_manifest": "NOT_GENERATED",
+    "model_artifact": "NOT_GENERATED",
+    "decision_artifact": "NOT_GENERATED"
+  }
+}
