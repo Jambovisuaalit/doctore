@@ -101,6 +101,24 @@ jobs:
       - name: Verify locked session MCP baseline
         run: python doctore_mcp/baseline/session_v1/materialize.py --verify-only
 
+      - name: Materialize baseline for differential diagnostics
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p results/baseline
+          python doctore_mcp/baseline/session_v1/materialize.py \
+            --output results/baseline/server.py
+          python - <<'PY'
+          from pathlib import Path
+          path = Path("results/baseline/server.py")
+          lines = path.read_text(encoding="utf-8").splitlines()
+          start, end = 485, min(len(lines), 510)
+          Path("results/baseline/line-485-510.txt").write_text(
+              "\n".join(f"{i + 1:04d}: {lines[i]}" for i in range(start - 1, end)) + "\n",
+              encoding="utf-8",
+          )
+          PY
+
       - name: Run full unit and golden differential suite
         shell: bash
         run: |
