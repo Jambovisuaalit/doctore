@@ -4,6 +4,7 @@ import os
 from pathlib import Path
 import tempfile
 import unittest
+from unittest.mock import patch
 from types import SimpleNamespace
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -11,6 +12,7 @@ TEST_BET_LOG = Path(tempfile.gettempdir()) / "doctore-slate-orchestrator-test.cs
 os.environ.setdefault("DOCTORE_REPO_PATH", str(ROOT))
 os.environ.setdefault("DOCTORE_BET_LOG", str(TEST_BET_LOG))
 
+from doctore_mcp.governance import GovernanceResult
 from doctore_mcp.orchestrator import SlateOrchestrator, SlateRunInput
 
 
@@ -32,6 +34,12 @@ class SlateOrchestratorTests(unittest.IsolatedAsyncioTestCase):
                 pass
 
     async def test_bet_requires_human_approval_before_logging(self):
+        """Exercise approval semantics with governance explicitly approved in-test.
+
+        Production defaults remain fail-closed because the repository governance
+        registries are intentionally empty. This unit test isolates the later
+        approval boundary instead of depending on production registry contents.
+        """
         calls = []
 
         async def parse(_):
@@ -100,26 +108,35 @@ class SlateOrchestratorTests(unittest.IsolatedAsyncioTestCase):
             settle_bet=settle,
             portfolio_status=portfolio,
         )
-        result = await orchestrator.run(
-            SlateRunInput(
-                raw_table="header\nrow with enough content",
-                sport="mlb",
-                event_date="2026-07-29",
-                captured_at="2026-07-29T10:00:00+00:00",
-                bankroll=1000,
-                portfolio_state={},
-                risk_policy={},
-                markets=[
-                    {
-                        "market_id": "m1",
-                        "prediction_path": "examples/model.json",
-                        "competition": "MLB",
-                        "target_market": "moneyline",
-                        "market_snapshot": {},
-                    }
-                ],
-            )
+        approved_governance = GovernanceResult(
+            ok=True,
+            reason_codes=[],
+            governance={"schema_version": "doctore.governance-result.v1", "test_fixture": True},
         )
+        with patch(
+            "doctore_mcp.orchestrator.validate_market_governance",
+            return_value=approved_governance,
+        ):
+            result = await orchestrator.run(
+                SlateRunInput(
+                    raw_table="header\nrow with enough content",
+                    sport="mlb",
+                    event_date="2026-07-29",
+                    captured_at="2026-07-29T10:00:00+00:00",
+                    bankroll=1000,
+                    portfolio_state={},
+                    risk_policy={},
+                    markets=[
+                        {
+                            "market_id": "m1",
+                            "prediction_path": "examples/model.json",
+                            "competition": "MLB",
+                            "target_market": "moneyline",
+                            "market_snapshot": {},
+                        }
+                    ],
+                )
+            )
         self.assertEqual(result.items[0].status, "AWAITING_HUMAN_APPROVAL")
         self.assertIn("HUMAN_APPROVAL_REQUIRED", result.items[0].reason_codes)
         self.assertEqual(calls, [])
