@@ -11,13 +11,14 @@ permissions:
 
 jobs:
   unit-tests:
+    name: Mathematics and MCP Verification
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
     env:
       PYTHONDONTWRITEBYTECODE: "1"
       SOURCE_SHA: ${{ github.sha }}
     steps:
-      - name: Prepare repository source without external actions
+      - name: Prepare repository source at exact SHA without external actions
         shell: bash
         run: |
           set -euo pipefail
@@ -60,7 +61,8 @@ jobs:
           cd "$DOCTORE_SOURCE"
           python3 -m unittest discover -s tests -p 'test_*.py' -v
 
-      - name: Run MCP Inspector 8-of-8 smoke suite
+      - name: Run MCP Inspector 10-of-10 smoke suite
         run: |
           cd "$DOCTORE_SOURCE"
-          python3 doctore_mcp/scripts/run_inspector_smoke.py --repo "$DOCTORE_SOURCE"
+          python3 doctore_mcp/scripts/run_inspector_smoke.py --repo "$DOCTORE_SOURCE" | tee inspector.log
+          grep -F "Inspector smoke suite passed: 10/10 expected tools" inspector.log
