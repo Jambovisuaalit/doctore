@@ -13,7 +13,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
-      - name: Probe lightweight historical endpoints
+      - name: Probe 2012 schedule rejects
         shell: bash
         run: |
           set -euo pipefail
@@ -21,36 +21,33 @@ jobs:
           import json
           from urllib.request import Request, urlopen
 
-          game_pk = 346942
+          game_pks = [317795, 317938, 317966, 318066, 320089]
           headers = {'User-Agent': 'Doctore-Sports/1.0 research-probe'}
 
           def get(url):
               req = Request(url, headers=headers)
               with urlopen(req, timeout=90) as response:
-                  raw = response.read()
-              return raw, json.loads(raw.decode('utf-8'))
+                  return json.loads(response.read().decode('utf-8'))
 
-          ts_raw, timestamps = get(f'https://statsapi.mlb.com/api/v1.1/game/{game_pk}/feed/live/timestamps')
-          print('timestamps_type', type(timestamps).__name__)
-          print('timestamps', json.dumps(timestamps, sort_keys=True)[:5000])
-          print('timestamps_bytes', len(ts_raw))
-
-          box_raw, box = get(f'https://statsapi.mlb.com/api/v1/game/{game_pk}/boxscore')
-          print('boxscore_bytes', len(box_raw))
-          print('boxscore_info', json.dumps(box.get('info', []), sort_keys=True))
-          teams = box.get('teams', {})
-          for side in ('away', 'home'):
-              team = teams.get(side, {})
-              print(side, 'team', json.dumps(team.get('team', {}), sort_keys=True))
-              print(side, 'pitchers', team.get('pitchers', []))
-              players = team.get('players', {})
-              for pid in team.get('pitchers', []):
-                  stats = players.get(f'ID{pid}', {}).get('stats', {}).get('pitching', {})
-                  print(side, pid, json.dumps({
-                      'gamesStarted': stats.get('gamesStarted'),
-                      'gamesPitched': stats.get('gamesPitched'),
-                      'pitchesThrown': stats.get('pitchesThrown'),
-                      'numberOfPitches': stats.get('numberOfPitches'),
-                      'inningsPitched': stats.get('inningsPitched'),
-                  }, sort_keys=True))
+          for game_pk in game_pks:
+              payload = get(f'https://statsapi.mlb.com/api/v1.1/game/{game_pk}/feed/live')
+              gd = payload.get('gameData', {})
+              live = payload.get('liveData', {})
+              box = live.get('boxscore', {})
+              linescore = live.get('linescore', {})
+              summary = {
+                  'gamePk': game_pk,
+                  'status': gd.get('status', {}),
+                  'datetime': gd.get('datetime', {}),
+                  'venue': gd.get('venue', {}),
+                  'away_team': ((gd.get('teams') or {}).get('away') or {}).get('name'),
+                  'home_team': ((gd.get('teams') or {}).get('home') or {}).get('name'),
+                  'linescore_teams': linescore.get('teams', {}),
+                  'boxscore_team_ids': {
+                      side: (((box.get('teams') or {}).get(side) or {}).get('team') or {}).get('id')
+                      for side in ('away', 'home')
+                  },
+                  'timestamps_last': (payload.get('metaData') or {}).get('timeStamp'),
+              }
+              print(json.dumps(summary, sort_keys=True))
           PY
