@@ -17,6 +17,10 @@ from src.doctore_probability import (
     fit_probability_pipeline,
     write_immutable_json,
 )
+from src.grouped_probability import (
+    GROUPED_VALIDATION_METHOD,
+    fit_grouped_probability_pipeline,
+)
 
 
 def _parse_args() -> argparse.Namespace:
@@ -33,6 +37,13 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--over-odds", required=True)
     parser.add_argument("--under-odds", required=True)
     parser.add_argument("--timestamp", required=True)
+    parser.add_argument(
+        "--group",
+        help=(
+            "Optional atomic slate/group column. When set, rows in one group share "
+            "the same prior-only model, residual history and calibration history."
+        ),
+    )
     parser.add_argument("--model-name", required=True)
     parser.add_argument("--model-version", required=True)
     parser.add_argument("--feature-schema-version", required=True)
@@ -56,7 +67,8 @@ def _read_csv(
     over_odds_column: str,
     under_odds_column: str,
     timestamp_column: str,
-) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, list[str]]:
+    group_column: str | None,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, list[str], list[str] | None]:
     rows: list[dict[str, str]] = []
     with path.open("r", encoding="utf-8", newline="") as handle:
         reader = csv.DictReader(handle)
@@ -67,6 +79,8 @@ def _read_csv(
             under_odds_column,
             timestamp_column,
         }
+        if group_column:
+            required.add(group_column)
         missing = required - set(reader.fieldnames or [])
         if missing:
             raise ValueError(f"CSV is missing required columns: {sorted(missing)}")
@@ -83,7 +97,8 @@ def _read_csv(
     over_odds = np.asarray([float(row[over_odds_column]) for row in rows], dtype=float)
     under_odds = np.asarray([float(row[under_odds_column]) for row in rows], dtype=float)
     timestamps = [row[timestamp_column] for row in rows]
-    return x, target, lines, over_odds, under_odds, timestamps
+    groups = [row[group_column] for row in rows] if group_column else None
+    return x, target, lines, over_odds, under_odds, timestamps, groups
 
 
 def main() -> None:
@@ -97,7 +112,7 @@ def main() -> None:
         )
     args.output_dir.mkdir(parents=True)
 
-    x, target, lines, over_odds, under_odds, timestamps = _read_csv(
+    x, target, lines, over_odds, under_odds, timestamps, groups = _read_csv(
         args.csv,
         features,
         args.target,
@@ -105,6 +120,7 @@ def main() -> None:
         args.over_odds,
         args.under_odds,
         args.timestamp,
+        args.group,
     )
     config = WalkForwardConfig(
         min_train_size=args.min_train_size,
@@ -113,13 +129,7 @@ def main() -> None:
         min_calibration_history=args.min_calibration_history,
         minimum_validation_sample=args.minimum_validation_sample,
     )
-    fitted = fit_probability_pipeline(
-        x,
-        target,
-        lines,
-        over_odds,
-        under_odds,
-        timestamps,
+    fit_kwargs = dict(
         model_name=args.model_name,
         model_version=args.model_version,
         feature_schema_version=args.feature_schema_version,
@@ -130,6 +140,18 @@ def main() -> None:
             "max_depth": args.max_depth,
         },
     )
+    if groups is None:
+        fitted = fit_probability_pipeline(
+            x, target, lines, over_odds, under_odds, timestamps, **fit_kwargs
+        )
+        validation_method = "expanding_walk_forward_oos"
+        group_count = None
+    else:
+        fitted = fit_grouped_probability_pipeline(
+            x, target, lines, over_odds, under_odds, timestamps, groups, **fit_kwargs
+        )
+        validation_method = GROUPED_VALIDATION_METHOD
+        group_count = fitted.group_count
 
     model_path = args.output_dir / "xgb-model.json"
     fitted.model.save_model(model_path)  # type: ignore[attr-defined]
@@ -140,7 +162,9 @@ def main() -> None:
             "model_version": fitted.model_version,
             "residual_distribution_version": fitted.residual_distribution_version,
             "artifact_sha256": fitted.residual_artifact_sha256,
-            "method": "expanding_walk_forward_oos",
+            "method": validation_method,
+            "group_column": args.group,
+            "group_count": group_count,
             "residuals": list(fitted.residuals),
         },
     )
@@ -156,6 +180,9 @@ def main() -> None:
             "model_artifact_sha256": fitted.model_artifact_sha256,
             "feature_schema_version": fitted.feature_schema_version,
             "calibration_status": fitted.calibration_status,
+            "validation_method": validation_method,
+            "group_column": args.group,
+            "group_count": group_count,
             "validation_period_start": fitted.validation_period_start,
             "validation_period_end": fitted.validation_period_end,
             "metrics": asdict(fitted.validation_metrics),
@@ -167,6 +194,9 @@ def main() -> None:
         "residuals": "residual-distribution.json",
         "calibrator": "platt-calibrator.json",
         "validation": "validation-report.json",
+        "validation_method": validation_method,
+        "group_column": args.group,
+        "group_count": group_count,
         "calibration_status": fitted.calibration_status,
     }
     print(json.dumps(manifest, indent=2, sort_keys=True))
