@@ -1,0 +1,7 @@
+{
+  "purpose": "Acquire immutable MLB StatsAPI source records for bullpen and park feature-schema v2 research",
+  "seasons": [2012, 2013, 2014, 2015, 2016, 2017, 2018, 2019, 2020, 2021],
+  "promotion": false,
+  "governance_change": false,
+  "requested_at": "2026-09-11"
+}
