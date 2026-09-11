@@ -1,0 +1,73 @@
+name: MLB v2 source acquisition
+
+on:
+  push:
+    branches: ['research/mlb-v2-acquisition-*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  acquire:
+    strategy:
+      fail-fast: false
+      max-parallel: 3
+      matrix:
+        season: [2012, 2013, 2014, 2015, 2016, 2017, 2018, 2019, 2020, 2021]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - name: Checkout exact SHA
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 1
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Acquire season feature sources
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/acquire_mlb_v2_sources.py \
+            --season ${{ matrix.season }} \
+            --workers 6 \
+            --output-dir results/mlb-v2-source-${{ matrix.season }}
+
+      - name: Verify artifact hashes and explicit-reject manifest
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from hashlib import sha256
+          import json
+          from pathlib import Path
+          import os
+
+          season = os.environ['SEASON']
+          root = Path(f'results/mlb-v2-source-{season}')
+          manifest_bytes = (root / 'manifest.json').read_bytes()
+          manifest = json.loads(manifest_bytes)
+          expected = (root / 'manifest.sha256').read_text().strip()
+          assert sha256(manifest_bytes).hexdigest() == expected
+          records = root / manifest['records_file']
+          assert sha256(records.read_bytes()).hexdigest() == manifest['records_sha256']
+          rejects = root / 'rejects.json'
+          assert sha256(rejects.read_bytes()).hexdigest() == manifest['rejects_sha256']
+          assert manifest['normalized_source_records'] + manifest['fetch_or_normalization_reject_count'] == manifest['eligible_schedule_games']
+          print(json.dumps(manifest, indent=2, sort_keys=True))
+          PY
+        env:
+          SEASON: ${{ matrix.season }}
+
+      - name: Upload immutable season source artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: mlb-v2-feature-sources-${{ matrix.season }}-${{ github.sha }}
+          path: results/mlb-v2-source-${{ matrix.season }}/
+          if-no-files-found: error
+          retention-days: 7
