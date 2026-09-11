@@ -74,16 +74,16 @@ def _revision_candidate(game_pk: int, rows: Sequence[Mapping[str, Any]], season:
         return None
     values = [_values(row) for row in strict_rows]
 
-    # Immutable settlement identity must be fully present and identical.
+    # Immutable settlement identity must be present on every row and identical.
     merged: dict[str, Any] = {"game_pk": game_pk}
     for field in IMMUTABLE_FIELDS:
-        unique = _unique_present(values, field)
+        raw_values = [value.get(field) for value in values]
+        if any(value in (None, "") for value in raw_values):
+            return None
+        unique = set(raw_values)
         if len(unique) != 1:
             return None
-        value = next(iter(unique))
-        if value in (None, ""):
-            return None
-        merged[field] = value
+        merged[field] = raw_values[0]
 
     # A revision resolver is only justified when at least one mutable field differs.
     mutable_conflicts = [field for field in MUTABLE_FIELDS if len(_unique_present(values, field)) > 1]
