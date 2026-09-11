@@ -43,11 +43,26 @@ class MlbV2SourceAcquisitionTests(unittest.TestCase):
             },
         }
 
+    def valid_box_bytes(self) -> bytes:
+        return json.dumps({
+            "teams": {
+                "away": self.team_box(1),
+                "home": self.team_box(2),
+            }
+        }, sort_keys=True).encode()
+
+    def timestamps_bytes(self) -> bytes:
+        return json.dumps(["20210711_020304"]).encode()
+
     def test_timestamp_latest_is_final_event_time(self) -> None:
         self.assertEqual(
             "2021-07-11T02:03:04Z",
             final_event_at_from_timestamps(["20210711_010203", "20210711_020304"]),
         )
+
+    def test_any_invalid_timestamp_fails_closed(self) -> None:
+        with self.assertRaisesRegex(SourceAcquisitionError, "invalid MLB timecode"):
+            final_event_at_from_timestamps(["20210711_020304", "bad"])
 
     def test_team_pitching_excludes_actual_starter(self) -> None:
         normalized = normalize_team_pitching(self.team_box(1), 1)
@@ -67,26 +82,68 @@ class MlbV2SourceAcquisitionTests(unittest.TestCase):
             normalize_team_pitching(self.team_box(1), 2)
 
     def test_normalized_record_is_content_addressed(self) -> None:
-        box = {
-            "teams": {
-                "away": self.team_box(1),
-                "home": self.team_box(2),
-            }
-        }
         first = normalize_game_source(
             self.schedule_game(),
-            boxscore_bytes=json.dumps(box, sort_keys=True).encode(),
-            timestamps_bytes=json.dumps(["20210711_020304"]).encode(),
+            boxscore_bytes=self.valid_box_bytes(),
+            timestamps_bytes=self.timestamps_bytes(),
         )
         second = normalize_game_source(
             self.schedule_game(),
-            boxscore_bytes=json.dumps(box, sort_keys=True).encode(),
-            timestamps_bytes=json.dumps(["20210711_020304"]).encode(),
+            boxscore_bytes=self.valid_box_bytes(),
+            timestamps_bytes=self.timestamps_bytes(),
         )
         self.assertEqual(first["source_sha256"], second["source_sha256"])
         self.assertEqual(7, first["final_total_runs"])
         self.assertEqual("2021-07-11T02:03:04Z", first["final_event_at"])
+        self.assertEqual("PASS", first["park_status"])
+        self.assertEqual("PASS", first["bullpen_status"])
         self.assertEqual(29, first["away_pitching"]["bullpen_pitches"])
+
+    def test_missing_boxscore_blocks_bullpen_but_preserves_park(self) -> None:
+        record = normalize_game_source(
+            self.schedule_game(),
+            boxscore_bytes=None,
+            timestamps_bytes=self.timestamps_bytes(),
+            bullpen_error="BOXSCORE_FETCH_FAILED",
+        )
+        self.assertEqual("PASS", record["park_status"])
+        self.assertEqual("BLOCKED", record["bullpen_status"])
+        self.assertEqual("BOXSCORE_FETCH_FAILED", record["bullpen_reason"])
+        self.assertIsNone(record["lineage"]["boxscore_sha256"])
+        self.assertNotIn("away_pitching", record)
+
+    def test_invalid_boxscore_json_blocks_bullpen_but_preserves_park(self) -> None:
+        record = normalize_game_source(
+            self.schedule_game(),
+            boxscore_bytes=b"{not-json",
+            timestamps_bytes=self.timestamps_bytes(),
+        )
+        self.assertEqual("PASS", record["park_status"])
+        self.assertEqual("BLOCKED", record["bullpen_status"])
+        self.assertEqual("BOXSCORE_JSON_INVALID", record["bullpen_reason"])
+        self.assertNotIn("away_pitching", record)
+
+    def test_ambiguous_starter_blocks_bullpen_but_preserves_park(self) -> None:
+        away = self.team_box(1)
+        away["players"]["ID102"]["stats"]["pitching"]["gamesStarted"] = 1
+        box = {"teams": {"away": away, "home": self.team_box(2)}}
+        record = normalize_game_source(
+            self.schedule_game(),
+            boxscore_bytes=json.dumps(box).encode(),
+            timestamps_bytes=self.timestamps_bytes(),
+        )
+        self.assertEqual("PASS", record["park_status"])
+        self.assertEqual("BLOCKED", record["bullpen_status"])
+        self.assertEqual("BULLPEN_NORMALIZATION_BLOCKED", record["bullpen_reason"])
+        self.assertIn("starter identity ambiguous", record["bullpen_detail"])
+
+    def test_invalid_timestamps_block_entire_record(self) -> None:
+        with self.assertRaisesRegex(SourceAcquisitionError, "timestamps payload"):
+            normalize_game_source(
+                self.schedule_game(),
+                boxscore_bytes=self.valid_box_bytes(),
+                timestamps_bytes=b"[]",
+            )
 
     def test_schedule_normalization_rejects_non_nine_inning_domain(self) -> None:
         payload = {

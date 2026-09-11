@@ -59,14 +59,57 @@ def fetch_bytes(url: str, *, attempts: int = 4) -> bytes:
     raise RuntimeError(f"fetch failed after {attempts} attempts: {url}: {last}")
 
 
+def reject_context(game: dict, *, reason: str, detail: str) -> dict:
+    return {
+        "game_pk": int(game["game_pk"]),
+        "event_id": f"mlb:{int(game['game_pk'])}",
+        "official_date": str(game["official_date"]),
+        "event_start_at": str(game["event_start_at"]),
+        "venue_id": int(game["venue_id"]),
+        "venue_name": str(game.get("venue_name", "")),
+        "away_team_id": int(game["away_team_id"]),
+        "home_team_id": int(game["home_team_id"]),
+        "reason": reason,
+        "detail": detail,
+    }
+
+
 def acquire_one(game: dict) -> tuple[dict | None, dict | None]:
     game_pk = int(game["game_pk"])
+    timestamps_url = f"https://statsapi.mlb.com/api/v1.1/game/{game_pk}/feed/live/timestamps"
     try:
-        boxscore = fetch_bytes(f"https://statsapi.mlb.com/api/v1/game/{game_pk}/boxscore")
-        timestamps = fetch_bytes(f"https://statsapi.mlb.com/api/v1.1/game/{game_pk}/feed/live/timestamps")
-        return normalize_game_source(game, boxscore_bytes=boxscore, timestamps_bytes=timestamps), None
-    except (RuntimeError, SourceAcquisitionError) as exc:
-        return None, {"game_pk": game_pk, "reason": type(exc).__name__, "detail": str(exc)}
+        timestamps = fetch_bytes(timestamps_url)
+    except RuntimeError as exc:
+        return None, reject_context(
+            game,
+            reason="TIMESTAMPS_FETCH_FAILED",
+            detail=str(exc),
+        )
+
+    boxscore_url = f"https://statsapi.mlb.com/api/v1/game/{game_pk}/boxscore"
+    boxscore: bytes | None
+    bullpen_error: str | None = None
+    try:
+        boxscore = fetch_bytes(boxscore_url)
+    except RuntimeError as exc:
+        boxscore = None
+        bullpen_error = "BOXSCORE_FETCH_FAILED"
+        print(f"game_pk={game_pk} bullpen blocked: {exc}", flush=True)
+
+    try:
+        record = normalize_game_source(
+            game,
+            boxscore_bytes=boxscore,
+            timestamps_bytes=timestamps,
+            bullpen_error=bullpen_error,
+        )
+    except SourceAcquisitionError as exc:
+        return None, reject_context(
+            game,
+            reason="TIMESTAMP_OR_CORE_NORMALIZATION_FAILED",
+            detail=str(exc),
+        )
+    return record, None
 
 
 def main() -> int:
@@ -102,17 +145,33 @@ def main() -> int:
                 fetch_rejects.append(reject)
             completed += 1
             if completed % 250 == 0 or completed == len(games):
-                print(f"season={args.season} completed={completed}/{len(games)} records={len(records)} rejects={len(fetch_rejects)}", flush=True)
+                bullpen_blocked = sum(1 for item in records if item.get("bullpen_status") != "PASS")
+                print(
+                    f"season={args.season} completed={completed}/{len(games)} "
+                    f"records={len(records)} rejects={len(fetch_rejects)} "
+                    f"bullpen_blocked={bullpen_blocked}",
+                    flush=True,
+                )
 
     records.sort(key=lambda item: (item["official_date"], item["event_start_at"], item["game_pk"]))
     fetch_rejects.sort(key=lambda item: item["game_pk"])
     all_rejects = schedule_rejects + fetch_rejects
+
     reason_counts = Counter(
         reason
         for item in schedule_rejects
         for reason in item.get("reasons", [])
     )
     reason_counts.update(item["reason"] for item in fetch_rejects)
+    reason_counts.update(
+        str(item.get("bullpen_reason"))
+        for item in records
+        if item.get("bullpen_status") != "PASS"
+    )
+
+    park_pass_records = sum(1 for item in records if item.get("park_status") == "PASS")
+    bullpen_pass_records = sum(1 for item in records if item.get("bullpen_status") == "PASS")
+    bullpen_blocked_records = len(records) - bullpen_pass_records
 
     jsonl = b"".join(canonical_bytes(record) for record in records)
     records_path = out / f"mlb-v2-feature-sources-{args.season}.jsonl"
@@ -134,13 +193,18 @@ def main() -> int:
         "schedule_sha256": sha256_bytes(schedule_raw),
         "eligible_schedule_games": len(games),
         "normalized_source_records": len(records),
+        "park_pass_records": park_pass_records,
+        "bullpen_pass_records": bullpen_pass_records,
+        "bullpen_blocked_records": bullpen_blocked_records,
         "schedule_reject_count": len(schedule_rejects),
+        "timestamp_or_core_reject_count": len(fetch_rejects),
         "fetch_or_normalization_reject_count": len(fetch_rejects),
         "reason_counts": dict(sorted(reason_counts.items())),
         "records_file": records_path.name,
         "records_sha256": sha256_bytes(jsonl),
         "rejects_sha256": sha256_bytes(rejects_bytes),
-        "acquisition_policy": "explicit_rejects_no_silent_drop",
+        "acquisition_policy": "park_retained_when_bullpen_blocked_explicit_rejects_no_silent_drop",
+        "reject_context_policy": "team_date_venue_context_required_for_eligible_game_rejects",
         "workers": args.workers,
     }
     manifest_bytes = canonical_bytes(manifest)
