@@ -9,8 +9,10 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
 from mlb_v2_source_acquisition import (
+    ScheduleResolutionError,
     SourceAcquisitionError,
     final_event_at_from_timestamps,
+    hydrate_schedule_candidate,
     normalize_game_source,
     normalize_schedule_games,
     normalize_team_pitching,
@@ -30,6 +32,54 @@ class MlbV2SourceAcquisitionTests(unittest.TestCase):
             "home_team_id": 2,
             "away_score": 4,
             "home_score": 3,
+        }
+
+    def schedule_row(self, *, game_pk: int = 123, status_code: str = "F", innings: int | None = 9, include_scores: bool = True, game_date: str = "2021-07-10T23:00:00Z") -> dict:
+        away = {"team": {"id": 1}}
+        home = {"team": {"id": 2}}
+        if include_scores:
+            away["score"] = 4
+            home["score"] = 3
+        row = {
+            "gamePk": game_pk,
+            "gameType": "R",
+            "gameDate": game_date,
+            "officialDate": "2021-07-10",
+            "status": {
+                "abstractGameState": "Final",
+                "codedGameState": status_code,
+                "statusCode": status_code,
+                "detailedState": "Final" if status_code == "F" else "Postponed",
+            },
+            "venue": {"id": 10, "name": "Test Park"},
+            "teams": {"away": away, "home": home},
+        }
+        if innings is not None:
+            row["scheduledInnings"] = innings
+        return row
+
+    def live_payload(self, *, game_pk: int = 123, innings: int | None = 9, away_score: int = 4, home_score: int = 3, venue_id: int = 10) -> dict:
+        linescore = {
+            "teams": {
+                "away": {"runs": away_score},
+                "home": {"runs": home_score},
+            }
+        }
+        if innings is not None:
+            linescore["scheduledInnings"] = innings
+        return {
+            "gamePk": game_pk,
+            "gameData": {
+                "game": {"pk": game_pk, "type": "R"},
+                "status": {"statusCode": "F", "codedGameState": "F", "detailedState": "Final"},
+                "datetime": {"officialDate": "2021-07-10", "dateTime": "2021-07-10T23:00:00Z"},
+                "venue": {"id": venue_id, "name": "Test Park"},
+                "teams": {
+                    "away": {"id": 1, "name": "Away"},
+                    "home": {"id": 2, "name": "Home"},
+                },
+            },
+            "liveData": {"linescore": linescore},
         }
 
     def team_box(self, team_id: int) -> dict:
@@ -145,27 +195,80 @@ class MlbV2SourceAcquisitionTests(unittest.TestCase):
                 timestamps_bytes=b"[]",
             )
 
-    def test_schedule_normalization_rejects_non_nine_inning_domain(self) -> None:
-        payload = {
-            "dates": [{
-                "games": [{
-                    "gamePk": 1,
-                    "gameType": "R",
-                    "gameDate": "2021-07-10T20:00:00Z",
-                    "officialDate": "2021-07-10",
-                    "scheduledInnings": 7,
-                    "status": {"abstractGameState": "Final"},
-                    "venue": {"id": 10, "name": "Park"},
-                    "teams": {
-                        "away": {"team": {"id": 1}, "score": 2},
-                        "home": {"team": {"id": 2}, "score": 3},
-                    },
-                }]
-            }]
-        }
-        games, rejected = normalize_schedule_games(payload, 2021)
+    def test_complete_played_final_schedule_row_needs_no_hydration(self) -> None:
+        payload = {"dates": [{"games": [self.schedule_row()]}]}
+        games, exclusions, stats = normalize_schedule_games(payload, 2021)
+        self.assertEqual([], exclusions)
+        self.assertEqual(1, len(games))
+        self.assertFalse(games[0]["needs_hydration"])
+        self.assertEqual(1, stats["strict_final_unique_game_pks"])
+
+    def test_postponed_stub_plus_makeup_final_is_one_candidate_not_false_reject(self) -> None:
+        postponed = self.schedule_row(status_code="DI", include_scores=False, game_date="2021-07-01T23:00:00Z")
+        final = self.schedule_row(status_code="F", include_scores=True, game_date="2021-07-10T23:00:00Z")
+        payload = {"dates": [{"games": [postponed, final]}]}
+        games, exclusions, stats = normalize_schedule_games(payload, 2021)
+        self.assertEqual([], exclusions)
+        self.assertEqual(1, len(games))
+        self.assertEqual("2021-07-10T23:00:00Z", games[0]["event_start_at"])
+        self.assertEqual(1, stats["duplicate_schedule_rows"])
+        self.assertEqual(1, stats["reschedule_or_nonfinal_metadata_rows"])
+
+    def test_partial_strict_final_candidate_is_hydrated(self) -> None:
+        payload = {"dates": [{"games": [self.schedule_row(include_scores=False)]}]}
+        games, exclusions, _ = normalize_schedule_games(payload, 2021)
+        self.assertEqual([], exclusions)
+        self.assertTrue(games[0]["needs_hydration"])
+        resolved = hydrate_schedule_candidate(games[0], self.live_payload())
+        self.assertFalse(resolved["needs_hydration"])
+        self.assertTrue(resolved["hydrated_from_live"])
+        self.assertEqual(4, resolved["away_score"])
+        self.assertEqual(3, resolved["home_score"])
+
+    def test_missing_scheduled_innings_can_be_hydrated(self) -> None:
+        payload = {"dates": [{"games": [self.schedule_row(innings=None)]}]}
+        games, _, _ = normalize_schedule_games(payload, 2021)
+        self.assertTrue(games[0]["needs_hydration"])
+        resolved = hydrate_schedule_candidate(games[0], self.live_payload(innings=9))
+        self.assertEqual(9, resolved["scheduled_innings"])
+
+    def test_schedule_live_conflict_fails_closed(self) -> None:
+        payload = {"dates": [{"games": [self.schedule_row()]}]}
+        games, _, _ = normalize_schedule_games(payload, 2021)
+        with self.assertRaises(ScheduleResolutionError) as ctx:
+            hydrate_schedule_candidate(games[0], self.live_payload(away_score=99))
+        self.assertEqual("SCHEDULE_LIVE_FIELD_CONFLICT", ctx.exception.code)
+
+    def test_duplicate_strict_final_rows_with_conflict_fail_closed(self) -> None:
+        first = self.schedule_row()
+        second = self.schedule_row()
+        second["teams"]["away"]["score"] = 9
+        payload = {"dates": [{"games": [first, second]}]}
+        games, exclusions, stats = normalize_schedule_games(payload, 2021)
         self.assertEqual([], games)
-        self.assertIn("NON_NINE_INNING_DOMAIN", rejected[0]["reasons"])
+        self.assertEqual("DUPLICATE_STRICT_FINAL_CONFLICT", exclusions[0]["reason"])
+        self.assertEqual(1, stats["strict_final_conflicts"])
+
+    def test_known_non_nine_inning_final_is_domain_exclusion(self) -> None:
+        payload = {"dates": [{"games": [self.schedule_row(innings=7)]}]}
+        games, exclusions, stats = normalize_schedule_games(payload, 2021)
+        self.assertEqual([], games)
+        self.assertEqual("NON_NINE_INNING_DOMAIN", exclusions[0]["reason"])
+        self.assertEqual(1, stats["known_domain_exclusions"])
+
+    def test_hydrated_non_nine_inning_game_is_domain_exclusion(self) -> None:
+        payload = {"dates": [{"games": [self.schedule_row(innings=None)]}]}
+        games, _, _ = normalize_schedule_games(payload, 2021)
+        with self.assertRaises(ScheduleResolutionError) as ctx:
+            hydrate_schedule_candidate(games[0], self.live_payload(innings=7))
+        self.assertEqual("NON_NINE_INNING_DOMAIN", ctx.exception.code)
+
+    def test_abstract_final_postponed_stub_is_not_strict_final(self) -> None:
+        payload = {"dates": [{"games": [self.schedule_row(status_code="DI", include_scores=False)]}]}
+        games, exclusions, stats = normalize_schedule_games(payload, 2021)
+        self.assertEqual([], games)
+        self.assertEqual("NO_STRICT_PLAYED_FINAL_ROW", exclusions[0]["reason"])
+        self.assertEqual(0, stats["strict_final_unique_game_pks"])
 
 
 if __name__ == "__main__":

@@ -18,8 +18,10 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
 from mlb_v2_source_acquisition import (
+    ScheduleResolutionError,
     SourceAcquisitionError,
     canonical_bytes,
+    hydrate_schedule_candidate,
     normalize_game_source,
     normalize_schedule_games,
     sha256_bytes,
@@ -59,32 +61,79 @@ def fetch_bytes(url: str, *, attempts: int = 4) -> bytes:
     raise RuntimeError(f"fetch failed after {attempts} attempts: {url}: {last}")
 
 
-def reject_context(game: dict, *, reason: str, detail: str) -> dict:
+def reject_context(game: dict, *, stage: str, reason: str, detail: str) -> dict:
+    def maybe_int(value):
+        try:
+            return int(value) if value not in (None, "") else None
+        except (TypeError, ValueError):
+            return None
+
     return {
-        "game_pk": int(game["game_pk"]),
-        "event_id": f"mlb:{int(game['game_pk'])}",
-        "official_date": str(game["official_date"]),
-        "event_start_at": str(game["event_start_at"]),
-        "venue_id": int(game["venue_id"]),
-        "venue_name": str(game.get("venue_name", "")),
-        "away_team_id": int(game["away_team_id"]),
-        "home_team_id": int(game["home_team_id"]),
+        "stage": stage,
+        "game_pk": maybe_int(game.get("game_pk")),
+        "event_id": f"mlb:{int(game['game_pk'])}" if game.get("game_pk") else None,
+        "official_date": game.get("official_date"),
+        "event_start_at": game.get("event_start_at"),
+        "venue_id": maybe_int(game.get("venue_id")),
+        "venue_name": game.get("venue_name"),
+        "away_team_id": maybe_int(game.get("away_team_id")),
+        "home_team_id": maybe_int(game.get("home_team_id")),
         "reason": reason,
         "detail": detail,
     }
 
 
-def acquire_one(game: dict) -> tuple[dict | None, dict | None]:
+def acquire_one(candidate: dict) -> dict:
+    game = dict(candidate)
     game_pk = int(game["game_pk"])
+    hydration_attempted = bool(game.get("needs_hydration"))
+    hydration_sha: str | None = None
+
+    if hydration_attempted:
+        live_url = f"https://statsapi.mlb.com/api/v1.1/game/{game_pk}/feed/live"
+        try:
+            live_bytes = fetch_bytes(live_url)
+        except RuntimeError as exc:
+            return {
+                "record": None,
+                "reject": reject_context(game, stage="hydration", reason="HYDRATION_FETCH_FAILED", detail=str(exc)),
+                "hydration_attempted": True,
+                "hydrated": False,
+                "hydrated_domain_exclusion": False,
+            }
+        hydration_sha = sha256_bytes(live_bytes)
+        try:
+            live_payload = json.loads(live_bytes.decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+            return {
+                "record": None,
+                "reject": reject_context(game, stage="hydration", reason="HYDRATION_JSON_INVALID", detail=str(exc)),
+                "hydration_attempted": True,
+                "hydrated": False,
+                "hydrated_domain_exclusion": False,
+            }
+        try:
+            game = hydrate_schedule_candidate(game, live_payload)
+        except ScheduleResolutionError as exc:
+            return {
+                "record": None,
+                "reject": reject_context(game, stage="hydration", reason=exc.code, detail=exc.detail),
+                "hydration_attempted": True,
+                "hydrated": False,
+                "hydrated_domain_exclusion": exc.code == "NON_NINE_INNING_DOMAIN",
+            }
+
     timestamps_url = f"https://statsapi.mlb.com/api/v1.1/game/{game_pk}/feed/live/timestamps"
     try:
         timestamps = fetch_bytes(timestamps_url)
     except RuntimeError as exc:
-        return None, reject_context(
-            game,
-            reason="TIMESTAMPS_FETCH_FAILED",
-            detail=str(exc),
-        )
+        return {
+            "record": None,
+            "reject": reject_context(game, stage="source", reason="TIMESTAMPS_FETCH_FAILED", detail=str(exc)),
+            "hydration_attempted": hydration_attempted,
+            "hydrated": hydration_attempted,
+            "hydrated_domain_exclusion": False,
+        }
 
     boxscore_url = f"https://statsapi.mlb.com/api/v1/game/{game_pk}/boxscore"
     boxscore: bytes | None
@@ -102,14 +151,28 @@ def acquire_one(game: dict) -> tuple[dict | None, dict | None]:
             boxscore_bytes=boxscore,
             timestamps_bytes=timestamps,
             bullpen_error=bullpen_error,
+            hydration_sha256=hydration_sha,
         )
     except SourceAcquisitionError as exc:
-        return None, reject_context(
-            game,
-            reason="TIMESTAMP_OR_CORE_NORMALIZATION_FAILED",
-            detail=str(exc),
-        )
-    return record, None
+        return {
+            "record": None,
+            "reject": reject_context(
+                game,
+                stage="source",
+                reason="TIMESTAMP_OR_CORE_NORMALIZATION_FAILED",
+                detail=str(exc),
+            ),
+            "hydration_attempted": hydration_attempted,
+            "hydrated": hydration_attempted,
+            "hydrated_domain_exclusion": False,
+        }
+    return {
+        "record": record,
+        "reject": None,
+        "hydration_attempted": hydration_attempted,
+        "hydrated": hydration_attempted,
+        "hydrated_domain_exclusion": False,
+    }
 
 
 def main() -> int:
@@ -128,47 +191,56 @@ def main() -> int:
     })
     schedule_raw = fetch_bytes(schedule_url)
     schedule_payload = json.loads(schedule_raw.decode("utf-8"))
-    games, schedule_rejects = normalize_schedule_games(schedule_payload, args.season)
+    games, raw_schedule_exclusions, schedule_stats = normalize_schedule_games(schedule_payload, args.season)
+    schedule_exclusions = [{"stage": "schedule", **item} for item in raw_schedule_exclusions]
     if not games:
-        raise RuntimeError("no eligible 9-inning final regular-season games")
+        raise RuntimeError("no strict-final MLB schedule candidates")
 
     records: list[dict] = []
-    fetch_rejects: list[dict] = []
+    runtime_rejects: list[dict] = []
+    hydration_attempted = 0
+    hydrated_candidates = 0
+    hydrated_domain_exclusions = 0
+
     with ThreadPoolExecutor(max_workers=args.workers) as pool:
         futures = {pool.submit(acquire_one, game): int(game["game_pk"]) for game in games}
         completed = 0
         for future in as_completed(futures):
-            record, reject = future.result()
-            if record is not None:
-                records.append(record)
-            if reject is not None:
-                fetch_rejects.append(reject)
+            result = future.result()
+            if result["record"] is not None:
+                records.append(result["record"])
+            if result["reject"] is not None:
+                runtime_rejects.append(result["reject"])
+            hydration_attempted += int(result["hydration_attempted"])
+            hydrated_candidates += int(result["hydrated"])
+            hydrated_domain_exclusions += int(result["hydrated_domain_exclusion"])
             completed += 1
             if completed % 250 == 0 or completed == len(games):
                 bullpen_blocked = sum(1 for item in records if item.get("bullpen_status") != "PASS")
                 print(
                     f"season={args.season} completed={completed}/{len(games)} "
-                    f"records={len(records)} rejects={len(fetch_rejects)} "
-                    f"bullpen_blocked={bullpen_blocked}",
+                    f"records={len(records)} runtime_rejects={len(runtime_rejects)} "
+                    f"hydrated={hydrated_candidates} bullpen_blocked={bullpen_blocked}",
                     flush=True,
                 )
 
     records.sort(key=lambda item: (item["official_date"], item["event_start_at"], item["game_pk"]))
-    fetch_rejects.sort(key=lambda item: item["game_pk"])
-    all_rejects = schedule_rejects + fetch_rejects
+    runtime_rejects.sort(key=lambda item: (item.get("game_pk") or -1, item["reason"]))
+    all_rejects = schedule_exclusions + runtime_rejects
 
-    reason_counts = Counter(
-        reason
-        for item in schedule_rejects
-        for reason in item.get("reasons", [])
-    )
-    reason_counts.update(item["reason"] for item in fetch_rejects)
+    reason_counts = Counter(item["reason"] for item in all_rejects)
     reason_counts.update(
         str(item.get("bullpen_reason"))
         for item in records
         if item.get("bullpen_status") != "PASS"
     )
 
+    source_reject_count = sum(1 for item in runtime_rejects if item.get("stage") == "source")
+    hydration_reject_count = sum(
+        1
+        for item in runtime_rejects
+        if item.get("stage") == "hydration" and item.get("reason") != "NON_NINE_INNING_DOMAIN"
+    )
     park_pass_records = sum(1 for item in records if item.get("park_status") == "PASS")
     bullpen_pass_records = sum(1 for item in records if item.get("bullpen_status") == "PASS")
     bullpen_blocked_records = len(records) - bullpen_pass_records
@@ -177,7 +249,7 @@ def main() -> int:
     records_path = out / f"mlb-v2-feature-sources-{args.season}.jsonl"
     records_path.write_bytes(jsonl)
     rejects_payload = {
-        "schema_version": "doctore.mlb-feature-source-rejects.v1",
+        "schema_version": "doctore.mlb-feature-source-rejects.v2",
         "season": args.season,
         "rejects": all_rejects,
     }
@@ -185,26 +257,30 @@ def main() -> int:
     (out / "rejects.json").write_bytes(rejects_bytes)
 
     manifest = {
-        "schema_version": "doctore.mlb-feature-source-manifest.v1",
+        "schema_version": "doctore.mlb-feature-source-manifest.v2",
         "season": args.season,
         "created_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "source": "MLB StatsAPI",
         "schedule_url": schedule_url,
         "schedule_sha256": sha256_bytes(schedule_raw),
+        **schedule_stats,
         "eligible_schedule_games": len(games),
+        "hydration_attempted": hydration_attempted,
+        "hydrated_candidates": hydrated_candidates,
+        "hydration_reject_count": hydration_reject_count,
+        "hydrated_domain_exclusions": hydrated_domain_exclusions,
         "normalized_source_records": len(records),
         "park_pass_records": park_pass_records,
         "bullpen_pass_records": bullpen_pass_records,
         "bullpen_blocked_records": bullpen_blocked_records,
-        "schedule_reject_count": len(schedule_rejects),
-        "timestamp_or_core_reject_count": len(fetch_rejects),
-        "fetch_or_normalization_reject_count": len(fetch_rejects),
+        "schedule_exclusion_count": len(schedule_exclusions),
+        "timestamp_or_core_reject_count": source_reject_count,
+        "fetch_or_normalization_reject_count": source_reject_count + hydration_reject_count,
         "reason_counts": dict(sorted(reason_counts.items())),
         "records_file": records_path.name,
         "records_sha256": sha256_bytes(jsonl),
         "rejects_sha256": sha256_bytes(rejects_bytes),
-        "acquisition_policy": "park_retained_when_bullpen_blocked_explicit_rejects_no_silent_drop",
-        "reject_context_policy": "team_date_venue_context_required_for_eligible_game_rejects",
+        "acquisition_policy": "strict_final_gamepk_dedupe_live_hydration_fail_closed_v2",
         "workers": args.workers,
     }
     manifest_bytes = canonical_bytes(manifest)
