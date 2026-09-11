@@ -10,7 +10,7 @@ import platform
 import subprocess
 import sys
 
-from .runtime import REPO, content_sha256, resolve_artifact_path
+from .runtime import REPO, content_sha256, file_sha256, resolve_artifact_path
 
 ARTIFACT_REGISTRY_PATH = Path(
     os.environ.get("DOCTORE_ARTIFACT_REGISTRY", str(REPO / "governance" / "artifact-registry.json"))
@@ -93,7 +93,7 @@ def validate_market_governance(
 
     try:
         artifact_path = resolve_artifact_path(prediction_path)
-        artifact_sha = content_sha256(artifact_path.read_bytes().hex())
+        artifact_sha = file_sha256(artifact_path)
         artifacts = _load_json(ARTIFACT_REGISTRY_PATH).get("artifacts", [])
         artifact_entry = next(
             (
