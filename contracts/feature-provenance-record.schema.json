@@ -32,6 +32,19 @@
     "source_sha256": {"$ref": "#/$defs/sha256"},
     "source_event_id": {"type": "string", "minLength": 1},
     "source_event_end_at": {"type": "string", "format": "date-time"},
+    "source_events": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["event_id", "end_at"],
+        "properties": {
+          "event_id": {"type": "string", "minLength": 1},
+          "end_at": {"type": "string", "format": "date-time"}
+        }
+      }
+    },
     "observed_at": {"type": "string", "format": "date-time"},
     "forecast_issued_at": {"type": "string", "format": "date-time"},
     "forecast_target_at": {"type": "string", "format": "date-time"},
@@ -39,19 +52,35 @@
   },
   "allOf": [
     {
-      "if": {"properties": {"availability_mode": {"const": "PRIOR_EVENT_FINAL"}}},
-      "then": {"required": ["source_event_id", "source_event_end_at"]}
+      "if": {"properties": {"availability_mode": {"const": "PRIOR_EVENT_FINAL"}}, "required": ["availability_mode"]},
+      "then": {
+        "oneOf": [
+          {
+            "required": ["source_events"],
+            "not": {
+              "anyOf": [
+                {"required": ["source_event_id"]},
+                {"required": ["source_event_end_at"]}
+              ]
+            }
+          },
+          {
+            "required": ["source_event_id", "source_event_end_at"],
+            "not": {"required": ["source_events"]}
+          }
+        ]
+      }
     },
     {
-      "if": {"properties": {"availability_mode": {"const": "PREGAME_SNAPSHOT"}}},
+      "if": {"properties": {"availability_mode": {"const": "PREGAME_SNAPSHOT"}}, "required": ["availability_mode"]},
       "then": {"required": ["observed_at"]}
     },
     {
-      "if": {"properties": {"availability_mode": {"const": "FORECAST_RUN"}}},
+      "if": {"properties": {"availability_mode": {"const": "FORECAST_RUN"}}, "required": ["availability_mode"]},
       "then": {"required": ["forecast_issued_at", "forecast_target_at"]}
     },
     {
-      "if": {"properties": {"availability_mode": {"const": "STATIC_KNOWN_BEFORE_CUTOFF"}}},
+      "if": {"properties": {"availability_mode": {"const": "STATIC_KNOWN_BEFORE_CUTOFF"}}, "required": ["availability_mode"]},
       "then": {"required": ["observed_at", "effective_at"]}
     }
   ],
