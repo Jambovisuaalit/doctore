@@ -119,12 +119,18 @@ FEATURE_GROUPS: Mapping[str, FeatureGroupSpec] = {
     "park": FeatureGroupSpec(
         name="park",
         columns=PARK_COLUMNS,
-        allowed_availability_modes=("PRIOR_EVENT_FINAL", "STATIC_KNOWN_BEFORE_CUTOFF"),
+        allowed_availability_modes=(
+            "AGGREGATE_PRIOR_EVENT_FINAL",
+            "PRIOR_EVENT_FINAL",
+            "STATIC_KNOWN_BEFORE_CUTOFF",
+        ),
         historical_2012_2021_status="READY_TO_ACQUIRE",
         source_policy=(
-            "Park effect must be derived prior-only from venue history or from a "
-            "versioned value known before cutoff. Full-season hindsight park factors "
-            "must never be joined to earlier rows."
+            "Historical derived park effects must use content-addressed aggregate prior-event "
+            "lineage whose contributors all finalized before the exact cutoff. A genuinely "
+            "versioned external park value may use STATIC_KNOWN_BEFORE_CUTOFF only when its "
+            "effective/observed timestamps prove it was known then. Full-season hindsight "
+            "park factors must never be joined to earlier rows."
         ),
     ),
     "weather": FeatureGroupSpec(
