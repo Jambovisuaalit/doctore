@@ -1,0 +1,105 @@
+name: MLB v2 source canary 2012
+
+on:
+  push:
+    branches: ['research/mlb-v2-canary-2012']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  canary:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - name: Checkout exact SHA
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 1
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Acquire 2012 source data with v3 schedule resolver
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/acquire_mlb_v2_sources_v3.py \
+            --season 2012 \
+            --workers 6 \
+            --output-dir results/mlb-v2-source-2012
+
+      - name: Verify 2012 v3 accounting and source invariants
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from hashlib import sha256
+          import json
+          from pathlib import Path
+
+          root = Path('results/mlb-v2-source-2012')
+          manifest_bytes = (root / 'manifest.json').read_bytes()
+          manifest = json.loads(manifest_bytes)
+          assert sha256(manifest_bytes).hexdigest() == (root / 'manifest.sha256').read_text().strip()
+          assert manifest['schema_version'] == 'doctore.mlb-feature-source-manifest.v2'
+          assert manifest['season'] == 2012
+
+          # Strict-F accounting stays disjoint from explicit FR completed-early exclusions.
+          assert manifest['strict_final_unique_game_pks'] == (
+              manifest['schedule_candidates']
+              + manifest['known_domain_exclusions']
+              + manifest['strict_final_conflicts']
+          )
+          assert manifest['completed_early_domain_exclusions'] == 7
+          assert manifest['unresolved_no_strict_played_final'] == 0
+          assert manifest['resolved_schedule_game_pks'] == (
+              manifest['strict_final_unique_game_pks']
+              + manifest['completed_early_domain_exclusions']
+          )
+          assert manifest['resolved_schedule_game_pks'] == manifest['unique_schedule_game_pks']
+
+          assert manifest['schedule_candidates'] == (
+              manifest['normalized_source_records']
+              + manifest['timestamp_or_core_reject_count']
+              + manifest['hydration_reject_count']
+              + manifest['hydrated_domain_exclusions']
+          )
+          assert manifest['hydration_attempted'] == (
+              manifest['hydrated_candidates']
+              + manifest['hydration_reject_count']
+              + manifest['hydrated_domain_exclusions']
+          )
+          assert 'SCHEDULE_FIELDS_MISSING' not in manifest['reason_counts']
+          assert manifest['reason_counts'].get('COMPLETED_EARLY_DOMAIN') == 7
+          assert manifest['park_pass_records'] == manifest['normalized_source_records']
+          assert manifest['bullpen_pass_records'] + manifest['bullpen_blocked_records'] == manifest['normalized_source_records']
+
+          records_bytes = (root / manifest['records_file']).read_bytes()
+          assert sha256(records_bytes).hexdigest() == manifest['records_sha256']
+          records = [json.loads(line) for line in records_bytes.splitlines() if line.strip()]
+          assert len(records) == manifest['normalized_source_records']
+          assert len({row['game_pk'] for row in records}) == len(records)
+
+          rejects_bytes = (root / 'rejects.json').read_bytes()
+          assert sha256(rejects_bytes).hexdigest() == manifest['rejects_sha256']
+          rejects = json.loads(rejects_bytes)['rejects']
+          completed_early = [row for row in rejects if row.get('reason') == 'COMPLETED_EARLY_DOMAIN']
+          assert len(completed_early) == 7
+          assert all(row.get('status_code') == 'FR' for row in completed_early)
+          assert all(str(row.get('detailed_state', '')).startswith('Completed Early') for row in completed_early)
+
+          print(json.dumps(manifest, indent=2, sort_keys=True))
+          PY
+
+      - name: Upload canary artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: mlb-v2-source-canary-2012-${{ github.sha }}
+          path: results/mlb-v2-source-2012/
+          if-no-files-found: error
+          retention-days: 7
