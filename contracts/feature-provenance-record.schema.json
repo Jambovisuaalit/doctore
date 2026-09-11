@@ -23,6 +23,7 @@
     "availability_mode": {
       "enum": [
         "PRIOR_EVENT_FINAL",
+        "AGGREGATE_PRIOR_EVENT_FINAL",
         "PREGAME_SNAPSHOT",
         "FORECAST_RUN",
         "STATIC_KNOWN_BEFORE_CUTOFF"
@@ -45,6 +46,12 @@
         }
       }
     },
+    "contributor_manifest_id": {"type": "string", "minLength": 1},
+    "contributor_manifest_sha256": {"$ref": "#/$defs/sha256"},
+    "aggregate_artifact_sha256": {"$ref": "#/$defs/sha256"},
+    "contributor_count": {"type": "integer", "minimum": 1},
+    "latest_contributor_end_at": {"type": "string", "format": "date-time"},
+    "derivation_version": {"type": "string", "minLength": 1},
     "observed_at": {"type": "string", "format": "date-time"},
     "forecast_issued_at": {"type": "string", "format": "date-time"},
     "forecast_target_at": {"type": "string", "format": "date-time"},
@@ -69,6 +76,26 @@
             "not": {"required": ["source_events"]}
           }
         ]
+      }
+    },
+    {
+      "if": {"properties": {"availability_mode": {"const": "AGGREGATE_PRIOR_EVENT_FINAL"}}, "required": ["availability_mode"]},
+      "then": {
+        "required": [
+          "contributor_manifest_id",
+          "contributor_manifest_sha256",
+          "aggregate_artifact_sha256",
+          "contributor_count",
+          "latest_contributor_end_at",
+          "derivation_version"
+        ],
+        "not": {
+          "anyOf": [
+            {"required": ["source_event_id"]},
+            {"required": ["source_event_end_at"]},
+            {"required": ["source_events"]}
+          ]
+        }
       }
     },
     {
