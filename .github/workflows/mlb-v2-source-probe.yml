@@ -1,0 +1,49 @@
+name: MLB v2 source probe
+
+on:
+  push:
+    branches: ['research/mlb-v2-source-probe']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Probe historical live feed
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from urllib.request import Request, urlopen
+
+          game_pk = 346942
+          url = f'https://statsapi.mlb.com/api/v1.1/game/{game_pk}/feed/live'
+          req = Request(url, headers={'User-Agent': 'Doctore-Sports/1.0 research-probe'})
+          with urlopen(req, timeout=90) as response:
+              payload = json.loads(response.read().decode('utf-8'))
+
+          print('gamePk', payload.get('gamePk'))
+          print('metaData', json.dumps(payload.get('metaData', {}), sort_keys=True))
+          gd = payload.get('gameData', {})
+          print('status', json.dumps(gd.get('status', {}), sort_keys=True))
+          print('datetime', json.dumps(gd.get('datetime', {}), sort_keys=True))
+          print('venue', json.dumps(gd.get('venue', {}), sort_keys=True))
+          print('gameInfo', json.dumps(gd.get('gameInfo', {}), sort_keys=True))
+          print('probablePitchers', json.dumps(gd.get('probablePitchers', {}), sort_keys=True))
+
+          teams = payload.get('liveData', {}).get('boxscore', {}).get('teams', {})
+          for side in ('away', 'home'):
+              team = teams.get(side, {})
+              pitchers = team.get('pitchers', [])
+              print(side, 'pitchers', pitchers)
+              players = team.get('players', {})
+              for pid in pitchers:
+                  player = players.get(f'ID{pid}', {})
+                  stats = player.get('stats', {}).get('pitching', {})
+                  print(side, pid, player.get('person', {}).get('fullName'), json.dumps(stats, sort_keys=True))
+          PY
