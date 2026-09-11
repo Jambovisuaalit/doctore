@@ -139,7 +139,7 @@ FEATURE_GROUPS: Mapping[str, FeatureGroupSpec] = {
     ),
 }
 
-ABlation_ORDER: tuple[str, ...] = ("baseline", "starter", "bullpen", "park", "weather")
+ABLATION_ORDER: tuple[str, ...] = ("baseline", "starter", "bullpen", "park", "weather")
 
 
 def group_columns(group_name: str) -> tuple[str, ...]:
