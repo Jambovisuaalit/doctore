@@ -37,8 +37,8 @@ def mlb_timecode_to_iso(value: str) -> str:
 def final_event_at_from_timestamps(payload: Any) -> str:
     if not isinstance(payload, list) or not payload:
         raise SourceAcquisitionError("timestamps payload must be a non-empty list")
-    values = [str(value) for value in payload]
-    return mlb_timecode_to_iso(max(values))
+    parsed = [mlb_timecode_to_iso(str(value)) for value in payload]
+    return max(parsed)
 
 
 def normalize_schedule_games(payload: Mapping[str, Any], season: int) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
@@ -149,6 +149,13 @@ def normalize_team_pitching(team_box: Mapping[str, Any], expected_team_id: int) 
     }
 
 
+def _block_bullpen(base: dict[str, Any], reason: str, detail: str | None = None) -> None:
+    base["bullpen_status"] = "BLOCKED"
+    base["bullpen_reason"] = reason
+    if detail:
+        base["bullpen_detail"] = detail
+
+
 def normalize_game_source(
     schedule_game: Mapping[str, Any],
     *,
@@ -189,18 +196,26 @@ def normalize_game_source(
     }
 
     if boxscore_bytes is None:
-        base["bullpen_status"] = "BLOCKED"
-        base["bullpen_reason"] = bullpen_error or "BOXSCORE_UNAVAILABLE"
+        _block_bullpen(base, bullpen_error or "BOXSCORE_UNAVAILABLE")
     else:
         try:
             boxscore = json.loads(boxscore_bytes.decode("utf-8"))
+            away = normalize_team_pitching(
+                boxscore.get("teams", {}).get("away", {}),
+                int(schedule_game["away_team_id"]),
+            )
+            home = normalize_team_pitching(
+                boxscore.get("teams", {}).get("home", {}),
+                int(schedule_game["home_team_id"]),
+            )
         except (UnicodeDecodeError, json.JSONDecodeError) as exc:
-            raise SourceAcquisitionError("invalid boxscore JSON") from exc
-        away = normalize_team_pitching(boxscore.get("teams", {}).get("away", {}), int(schedule_game["away_team_id"]))
-        home = normalize_team_pitching(boxscore.get("teams", {}).get("home", {}), int(schedule_game["home_team_id"]))
-        base["bullpen_status"] = "PASS"
-        base["away_pitching"] = away
-        base["home_pitching"] = home
+            _block_bullpen(base, "BOXSCORE_JSON_INVALID", str(exc))
+        except SourceAcquisitionError as exc:
+            _block_bullpen(base, "BULLPEN_NORMALIZATION_BLOCKED", str(exc))
+        else:
+            base["bullpen_status"] = "PASS"
+            base["away_pitching"] = away
+            base["home_pitching"] = home
 
     digest = sha256_bytes(canonical_bytes(base))
     return {
