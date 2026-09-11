@@ -39,12 +39,26 @@
     "slate_column": {"type": "string", "minLength": 1},
     "sort_order": {"enum": ["timestamp_strictly_ascending", "timestamp_non_decreasing_grouped"]},
     "source_manifest": {"type": "string", "minLength": 1},
+    "feature_group_manifest": {"type": "string", "minLength": 1},
+    "feature_provenance_file": {"type": "string", "minLength": 1},
+    "ablation_plan": {"type": "string", "minLength": 1},
     "notes": {"type": "string"}
   },
   "allOf": [
     {
       "if": {"properties": {"sort_order": {"const": "timestamp_non_decreasing_grouped"}}, "required": ["sort_order"]},
       "then": {"required": ["slate_column"]}
+    },
+    {
+      "if": {
+        "properties": {
+          "feature_schema_version": {"const": "mlb.full-game-total.point-in-time.v2"}
+        },
+        "required": ["feature_schema_version"]
+      },
+      "then": {
+        "required": ["feature_group_manifest", "feature_provenance_file", "ablation_plan"]
+      }
     }
   ],
   "$defs": {"sha256": {"type": "string", "pattern": "^[a-fA-F0-9]{64}$"}}

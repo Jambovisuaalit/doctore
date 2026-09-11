@@ -1,0 +1,109 @@
+{
+  "schema_version": "doctore.feature-groups.v1",
+  "dataset_id": "mlb-full-game-totals-2012-2021-v2",
+  "feature_schema_version": "mlb.full-game-total.point-in-time.v2",
+  "created_at": "2026-09-11T07:00:00+00:00",
+  "groups": [
+    {
+      "name": "baseline",
+      "status": "VERIFIED_BASELINE",
+      "columns": [
+        "market_total_line",
+        "away_games_prior",
+        "home_games_prior",
+        "away_season_runs_for_pg",
+        "away_season_runs_against_pg",
+        "home_season_runs_for_pg",
+        "home_season_runs_against_pg",
+        "away_rolling5_runs_for",
+        "away_rolling5_runs_against",
+        "home_rolling5_runs_for",
+        "home_rolling5_runs_against",
+        "away_rolling10_runs_for",
+        "away_rolling10_runs_against",
+        "home_rolling10_runs_for",
+        "home_rolling10_runs_against",
+        "away_rolling20_runs_for",
+        "away_rolling20_runs_against",
+        "home_rolling20_runs_for",
+        "home_rolling20_runs_against",
+        "away_rolling10_win_pct",
+        "home_rolling10_win_pct",
+        "away_rest_days",
+        "home_rest_days"
+      ],
+      "allowed_availability_modes": ["PRIOR_EVENT_FINAL"],
+      "source_policy": "Prior completed authoritative games only; same-slate outcomes are withheld.",
+      "reason_codes": [],
+      "evidence": ["MLB StatsAPI schedule/results cache + immutable dataset audit"]
+    },
+    {
+      "name": "starter",
+      "status": "BLOCKED_PROVENANCE",
+      "columns": [
+        "away_starter_prior30_ip",
+        "home_starter_prior30_ip",
+        "away_starter_prior30_ra9",
+        "home_starter_prior30_ra9",
+        "away_starter_days_rest",
+        "home_starter_days_rest",
+        "away_starter_season_pitch_count",
+        "home_starter_season_pitch_count"
+      ],
+      "allowed_availability_modes": ["PREGAME_SNAPSHOT"],
+      "source_policy": "Require archived pregame starter identity captured before the feature cutoff; postgame actual starter identity is not accepted.",
+      "reason_codes": ["NO_ARCHIVED_PREGAME_STARTER_SNAPSHOT_2012_2021"],
+      "evidence": []
+    },
+    {
+      "name": "bullpen",
+      "status": "READY_TO_ACQUIRE",
+      "columns": [
+        "away_bullpen_pitches_1d",
+        "home_bullpen_pitches_1d",
+        "away_bullpen_pitches_3d",
+        "home_bullpen_pitches_3d",
+        "away_bullpen_appearances_1d",
+        "home_bullpen_appearances_1d",
+        "away_bullpen_appearances_3d",
+        "home_bullpen_appearances_3d",
+        "away_bullpen_back_to_back_count",
+        "home_bullpen_back_to_back_count"
+      ],
+      "allowed_availability_modes": ["PRIOR_EVENT_FINAL"],
+      "source_policy": "Derive from prior completed MLB pitching boxscores only. Current-event and same-slate pitching usage are excluded.",
+      "reason_codes": ["PRIOR_GAME_PITCHING_USAGE_CACHE_NOT_LOCKED"],
+      "evidence": ["https://statsapi.mlb.com/api/v1/"]
+    },
+    {
+      "name": "park",
+      "status": "READY_TO_ACQUIRE",
+      "columns": [
+        "park_games_prior",
+        "park_total_runs_mean_prior",
+        "park_run_factor_prior"
+      ],
+      "allowed_availability_modes": ["PRIOR_EVENT_FINAL", "STATIC_KNOWN_BEFORE_CUTOFF"],
+      "source_policy": "Derive run factor from venue games strictly prior to the feature cutoff. Do not use a hindsight full-season park factor for earlier games.",
+      "reason_codes": ["PRIOR_ONLY_VENUE_FACTOR_NOT_LOCKED"],
+      "evidence": ["https://baseballsavant.mlb.com/leaderboard/statcast-park-factors"]
+    },
+    {
+      "name": "weather",
+      "status": "BLOCKED_PERIOD",
+      "columns": [
+        "forecast_temp_f",
+        "forecast_wind_speed_mph",
+        "forecast_wind_out_component_mph",
+        "forecast_relative_humidity_pct"
+      ],
+      "allowed_availability_modes": ["FORECAST_RUN"],
+      "source_policy": "Use an archived forecast run issued before feature cutoff. Reanalysis and observed-at-game-time weather are forbidden substitutes.",
+      "reason_codes": [
+        "ARCHIVED_FORECAST_COVERAGE_DOES_NOT_SPAN_2012_2021",
+        "REANALYSIS_NOT_ALLOWED_AS_PREGAME_FORECAST"
+      ],
+      "evidence": ["https://open-meteo.com/en/docs/historical-forecast-api"]
+    }
+  ]
+}
