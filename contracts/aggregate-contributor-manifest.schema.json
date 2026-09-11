@@ -1,0 +1,83 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://doctore.local/schemas/aggregate-contributor-manifest.schema.json",
+  "title": "Doctore aggregate prior-event contributor manifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "manifest_id",
+    "event_id",
+    "feature_group",
+    "feature_cutoff_at",
+    "derivation_version",
+    "population_rule",
+    "history_start_season",
+    "history_end_season",
+    "target_venue_id",
+    "contributor_count",
+    "venue_contributor_count",
+    "latest_contributor_end_at",
+    "contributors",
+    "source_collections"
+  ],
+  "properties": {
+    "schema_version": {"const": "doctore.aggregate-contributors.v1"},
+    "manifest_id": {"type": "string", "minLength": 1},
+    "event_id": {"type": "string", "minLength": 1},
+    "feature_group": {"const": "park"},
+    "feature_cutoff_at": {"type": "string", "format": "date-time"},
+    "derivation_version": {"type": "string", "minLength": 1},
+    "population_rule": {"const": "all_source_collection_events_final_before_cutoff_v1"},
+    "history_start_season": {"type": "integer", "minimum": 1900, "maximum": 2200},
+    "history_end_season": {"type": "integer", "minimum": 1900, "maximum": 2200},
+    "target_venue_id": {"type": "integer", "minimum": 1},
+    "contributor_count": {"type": "integer", "minimum": 1},
+    "venue_contributor_count": {"type": "integer", "minimum": 1},
+    "latest_contributor_end_at": {"type": "string", "format": "date-time"},
+    "contributors": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["event_id", "end_at", "source_sha256", "venue_id", "final_total_runs"],
+        "properties": {
+          "event_id": {"type": "string", "minLength": 1},
+          "end_at": {"type": "string", "format": "date-time"},
+          "source_sha256": {"$ref": "#/$defs/sha256"},
+          "venue_id": {"type": "integer", "minimum": 1},
+          "final_total_runs": {"type": "integer", "minimum": 0}
+        }
+      }
+    },
+    "source_collections": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "collection_id",
+          "season",
+          "manifest_sha256",
+          "records_sha256",
+          "unresolved_candidate_reject_count"
+        ],
+        "properties": {
+          "collection_id": {"type": "string", "minLength": 1},
+          "season": {"type": "integer", "minimum": 1900, "maximum": 2200},
+          "manifest_sha256": {"$ref": "#/$defs/sha256"},
+          "records_sha256": {"$ref": "#/$defs/sha256"},
+          "unresolved_candidate_reject_count": {"type": "integer", "minimum": 0}
+        }
+      }
+    }
+  },
+  "$defs": {
+    "sha256": {
+      "type": "string",
+      "pattern": "^[a-fA-F0-9]{64}$"
+    }
+  }
+}

@@ -8,6 +8,7 @@ from typing import Any, Mapping, Sequence
 SHA256_RE = re.compile(r"^[a-fA-F0-9]{64}$")
 ALLOWED_MODES = {
     "PRIOR_EVENT_FINAL",
+    "AGGREGATE_PRIOR_EVENT_FINAL",
     "PREGAME_SNAPSHOT",
     "FORECAST_RUN",
     "STATIC_KNOWN_BEFORE_CUTOFF",
@@ -49,7 +50,12 @@ def _validate_prior_source(
 
 
 def validate_provenance_record(record: Mapping[str, Any]) -> tuple[str, ...]:
-    """Return reason codes; empty tuple means the record is admissible."""
+    """Return reason codes; empty tuple means the record is structurally admissible.
+
+    ``AGGREGATE_PRIOR_EVENT_FINAL`` is only the compact reference layer. Its
+    contributor manifest and aggregate artifact must additionally pass the
+    aggregate-lineage validator before the feature is decision-eligible.
+    """
     reasons: list[str] = []
     required = (
         "event_id", "feature_group", "source", "source_record_id",
@@ -114,6 +120,32 @@ def validate_provenance_record(record: Mapping[str, Any]) -> tuple[str, ...]:
         else:
             reasons.append("MISSING_SOURCE_EVENT_PROVENANCE")
 
+    elif mode == "AGGREGATE_PRIOR_EVENT_FINAL":
+        if any(field in record for field in ("source_event_id", "source_event_end_at", "source_events")):
+            reasons.append("AGGREGATE_SOURCE_EVENT_REPRESENTATION_AMBIGUOUS")
+        for field in ("contributor_manifest_id", "derivation_version"):
+            if not str(record.get(field, "")).strip():
+                reasons.append(f"MISSING_{field.upper()}")
+        for field in ("contributor_manifest_sha256", "aggregate_artifact_sha256"):
+            value = str(record.get(field, ""))
+            if not SHA256_RE.fullmatch(value):
+                reasons.append(f"{field.upper()}_INVALID")
+        count = record.get("contributor_count")
+        if not isinstance(count, int) or isinstance(count, bool) or count < 1:
+            reasons.append("CONTRIBUTOR_COUNT_INVALID")
+        latest = str(record.get("latest_contributor_end_at", "")).strip()
+        if not latest:
+            reasons.append("MISSING_LATEST_CONTRIBUTOR_END_AT")
+        else:
+            try:
+                if _ts(latest, "latest_contributor_end_at") >= cutoff:
+                    reasons.append("LATEST_CONTRIBUTOR_NOT_FINAL_BEFORE_CUTOFF")
+            except FeatureProvenanceError:
+                reasons.append("LATEST_CONTRIBUTOR_END_AT_INVALID")
+        aggregate_sha = str(record.get("aggregate_artifact_sha256", ""))
+        if SHA256_RE.fullmatch(aggregate_sha) and str(record.get("source_sha256", "")) != aggregate_sha:
+            reasons.append("SOURCE_SHA256_AGGREGATE_MISMATCH")
+
     elif mode == "PREGAME_SNAPSHOT":
         observed_at = str(record.get("observed_at", "")).strip()
         if not observed_at:
@@ -175,6 +207,8 @@ def validate_feature_provenance(
 
     When ``required_cutoffs_by_event`` is supplied, provenance must use the exact
     dataset cutoff instant for that event. A later relaxed cutoff is never accepted.
+    Aggregate-mode records still require their external contributor-manifest
+    validation in addition to this row-level coverage check.
     """
     normalized_events = [str(event_id) for event_id in required_event_ids]
     normalized_groups = [str(group) for group in required_groups]

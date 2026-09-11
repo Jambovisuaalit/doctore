@@ -48,6 +48,7 @@
             "items": {
               "enum": [
                 "PRIOR_EVENT_FINAL",
+                "AGGREGATE_PRIOR_EVENT_FINAL",
                 "PREGAME_SNAPSHOT",
                 "FORECAST_RUN",
                 "STATIC_KNOWN_BEFORE_CUTOFF"
