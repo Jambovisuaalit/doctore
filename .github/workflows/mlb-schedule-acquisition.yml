@@ -24,145 +24,14 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Download and normalize 2012-2021 MLB regular-season results
-        shell: bash
+      - name: Acquire authoritative 2012-2021 schedule/results cache
         run: |
-          set -euo pipefail
-          mkdir -p results/mlb-schedule-cache
-          python - <<'PY'
-          from __future__ import annotations
-          from collections import defaultdict
-          from hashlib import sha256
-          import json
-          from pathlib import Path
-          from urllib.parse import urlencode
-          from urllib.request import Request, urlopen
-          from datetime import datetime, timezone
-          import time
+          python scripts/research_acquire_mlb_schedule_cache.py \
+            --start-year 2012 \
+            --end-year 2021 \
+            --output-dir results/mlb-schedule-cache
 
-          OUT = Path('results/mlb-schedule-cache')
-          BASE = 'https://statsapi.mlb.com/api/v1/schedule'
-          manifest = []
-
-          def canonical_bytes(value):
-              return (json.dumps(value, sort_keys=True, separators=(',', ':'), ensure_ascii=False) + '\n').encode('utf-8')
-
-          for year in range(2012, 2022):
-              query = urlencode({
-                  'sportId': 1,
-                  'startDate': f'{year}-01-01',
-                  'endDate': f'{year}-12-31',
-                  'gameType': 'R',
-                  'hydrate': 'linescore',
-              })
-              url = f'{BASE}?{query}'
-              request = Request(url, headers={'User-Agent': 'Doctore-Sports/1.0 validation-cache'})
-              for attempt in range(1, 5):
-                  try:
-                      with urlopen(request, timeout=90) as response:
-                          if getattr(response, 'status', 200) != 200:
-                              raise RuntimeError(f'HTTP {response.status}')
-                          payload = json.loads(response.read().decode('utf-8'))
-                      break
-                  except Exception as exc:
-                      if attempt == 4:
-                          raise RuntimeError(f'{year} download failed: {exc}') from exc
-                      time.sleep(2 ** (attempt - 1))
-
-              games = {}
-              raw_records = 0
-              for date_block in payload.get('dates', []):
-                  for raw in date_block.get('games', []):
-                      raw_records += 1
-                      if raw.get('gameType') != 'R':
-                          continue
-                      status = raw.get('status') or {}
-                      if status.get('abstractGameState') != 'Final':
-                          continue
-                      if status.get('detailedState') in {'Postponed','Cancelled','Suspended'}:
-                          continue
-                      official_date = str(raw.get('officialDate') or '')
-                      if not official_date.startswith(str(year)):
-                          continue
-                      teams = raw.get('teams') or {}
-                      away = teams.get('away') or {}
-                      home = teams.get('home') or {}
-                      item = {
-                          'gamePk': int(raw['gamePk']),
-                          'gameDate': str(raw['gameDate']),
-                          'officialDate': official_date,
-                          'gameType': 'R',
-                          'doubleHeader': str(raw.get('doubleHeader', 'N')),
-                          'gameNumber': int(raw.get('gameNumber', 1)),
-                          'scheduledInnings': int(raw.get('scheduledInnings', 9)),
-                          'status': {
-                              'abstractGameState': str(status.get('abstractGameState', '')),
-                              'detailedState': str(status.get('detailedState', '')),
-                          },
-                          'teams': {
-                              'away': {
-                                  'score': int(away['score']),
-                                  'team': {'id': int(away['team']['id']), 'name': str(away['team'].get('name',''))},
-                              },
-                              'home': {
-                                  'score': int(home['score']),
-                                  'team': {'id': int(home['team']['id']), 'name': str(home['team'].get('name',''))},
-                              },
-                          },
-                      }
-                      pk = item['gamePk']
-                      if pk in games and games[pk] != item:
-                          print('CONFLICT_GAMEPK', pk, flush=True)
-                          print('PREVIOUS', json.dumps(games[pk], sort_keys=True), flush=True)
-                          print('CURRENT', json.dumps(item, sort_keys=True), flush=True)
-                          raise RuntimeError(f'conflicting final records for gamePk {pk}')
-                      games[pk] = item
-
-              if len(games) < 100:
-                  raise RuntimeError(f'implausibly small season {year}: {len(games)}')
-              grouped = defaultdict(list)
-              for item in games.values():
-                  grouped[item['officialDate']].append(item)
-              normalized = {
-                  'schema_version': 'doctore.mlb-schedule-cache.v1',
-                  'source': 'MLB StatsAPI /api/v1/schedule',
-                  'season': year,
-                  'retrieved_at': datetime.now(timezone.utc).isoformat(timespec='seconds'),
-                  'source_url': url,
-                  'dates': [
-                      {'date': day, 'games': sorted(items, key=lambda x: (x['gameDate'], x['gamePk']))}
-                      for day, items in sorted(grouped.items())
-                  ],
-                  'audit': {
-                      'raw_game_records': raw_records,
-                      'final_regular_season_games': len(games),
-                      'official_date_min': min(grouped),
-                      'official_date_max': max(grouped),
-                  },
-              }
-              data = canonical_bytes(normalized)
-              digest = sha256(data).hexdigest()
-              path = OUT / f'mlb-schedule-{year}.json'
-              path.write_bytes(data)
-              (OUT / f'mlb-schedule-{year}.sha256').write_text(digest + '\n', encoding='utf-8')
-              manifest.append({'season': year, 'file': path.name, 'sha256': digest, 'game_count': len(games)})
-              print(year, len(games), digest)
-
-          manifest_payload = {
-              'schema_version': 'doctore.mlb-schedule-cache-manifest.v1',
-              'created_at': datetime.now(timezone.utc).isoformat(timespec='seconds'),
-              'source': 'MLB StatsAPI',
-              'seasons': manifest,
-              'total_games': sum(x['game_count'] for x in manifest),
-              'write_policy': 'workflow-artifact-immutable-per-commit',
-              'commit_sha': __import__('os').environ['GITHUB_SHA'],
-          }
-          data = canonical_bytes(manifest_payload)
-          (OUT / 'schedule-cache-manifest.json').write_bytes(data)
-          (OUT / 'schedule-cache-manifest.sha256').write_text(sha256(data).hexdigest() + '\n', encoding='utf-8')
-          PY
-
-      - name: Verify cache structure
+      - name: Verify exact season coverage
         shell: bash
         run: |
           set -euo pipefail
@@ -171,7 +40,7 @@ jobs:
           from pathlib import Path
           root = Path('results/mlb-schedule-cache')
           manifest = json.loads((root / 'schedule-cache-manifest.json').read_text())
-          assert len(manifest['seasons']) == 10, manifest
+          assert [x['season'] for x in manifest['seasons']] == list(range(2012, 2022)), manifest
           assert manifest['total_games'] > 20000, manifest['total_games']
           for record in manifest['seasons']:
               payload = json.loads((root / record['file']).read_text())
