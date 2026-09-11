@@ -64,6 +64,11 @@ def normalize_schedule_games_v3(
     ``FR`` by itself is insufficient evidence. Only ``FR`` plus an explicit
     ``Completed Early...`` detailed state is a known domain exclusion. Everything
     else preserves the base normalizer's fail-closed classification.
+
+    ``known_domain_exclusions`` intentionally preserves the base normalizer's
+    strict-final accounting semantics. Completed-early FR rows are tracked in the
+    separate ``completed_early_domain_exclusions`` counter because they are not
+    strict ``F`` rows. ``resolved_schedule_game_pks`` combines both partitions.
     """
     candidates, exclusions, stats = _normalize_schedule_games_base(payload, season)
 
@@ -103,8 +108,10 @@ def normalize_schedule_games_v3(
 
     updated_stats = dict(stats)
     updated_stats["completed_early_domain_exclusions"] = reclassified
-    updated_stats["known_domain_exclusions"] = int(updated_stats.get("known_domain_exclusions", 0)) + reclassified
     updated_stats["unresolved_no_strict_played_final"] = sum(
         1 for item in rewritten if item.get("reason") == "NO_STRICT_PLAYED_FINAL_ROW"
+    )
+    updated_stats["resolved_schedule_game_pks"] = (
+        int(updated_stats.get("strict_final_unique_game_pks", 0)) + reclassified
     )
     return candidates, rewritten, updated_stats

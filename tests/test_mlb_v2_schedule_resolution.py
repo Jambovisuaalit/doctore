@@ -44,7 +44,9 @@ class MlbV2ScheduleResolutionTests(unittest.TestCase):
         self.assertEqual("FR", exclusions[0]["status_code"])
         self.assertEqual("Completed Early: Rain", exclusions[0]["detailed_state"])
         self.assertEqual(1, stats["completed_early_domain_exclusions"])
-        self.assertEqual(1, stats["known_domain_exclusions"])
+        self.assertEqual(0, stats["known_domain_exclusions"])
+        self.assertEqual(0, stats["strict_final_unique_game_pks"])
+        self.assertEqual(1, stats["resolved_schedule_game_pks"])
         self.assertEqual(0, stats["unresolved_no_strict_played_final"])
 
     def test_bare_fr_remains_unresolved_fail_closed(self) -> None:
@@ -55,6 +57,7 @@ class MlbV2ScheduleResolutionTests(unittest.TestCase):
         self.assertEqual([], games)
         self.assertEqual("NO_STRICT_PLAYED_FINAL_ROW", exclusions[0]["reason"])
         self.assertEqual(0, stats["completed_early_domain_exclusions"])
+        self.assertEqual(0, stats["resolved_schedule_game_pks"])
         self.assertEqual(1, stats["unresolved_no_strict_played_final"])
 
     def test_completed_early_text_without_fr_is_not_reclassified(self) -> None:
@@ -65,6 +68,7 @@ class MlbV2ScheduleResolutionTests(unittest.TestCase):
         self.assertEqual([], games)
         self.assertEqual("NO_STRICT_PLAYED_FINAL_ROW", exclusions[0]["reason"])
         self.assertEqual(0, stats["completed_early_domain_exclusions"])
+        self.assertEqual(0, stats["resolved_schedule_game_pks"])
 
     def test_regular_final_stays_candidate(self) -> None:
         games, exclusions, stats = normalize_schedule_games_v3(
@@ -74,6 +78,8 @@ class MlbV2ScheduleResolutionTests(unittest.TestCase):
         self.assertEqual(1, len(games))
         self.assertEqual([], exclusions)
         self.assertEqual(0, stats["completed_early_domain_exclusions"])
+        self.assertEqual(1, stats["strict_final_unique_game_pks"])
+        self.assertEqual(1, stats["resolved_schedule_game_pks"])
 
     def test_completed_early_outside_requested_season_is_not_reclassified(self) -> None:
         row = self.row(status_code="FR", detailed_state="Completed Early: Rain")
@@ -82,6 +88,18 @@ class MlbV2ScheduleResolutionTests(unittest.TestCase):
         self.assertEqual([], games)
         self.assertEqual("NO_STRICT_PLAYED_FINAL_ROW", exclusions[0]["reason"])
         self.assertEqual(0, stats["completed_early_domain_exclusions"])
+        self.assertEqual(0, stats["resolved_schedule_game_pks"])
+
+    def test_strict_final_and_completed_early_accounting_are_disjoint(self) -> None:
+        final = self.row(status_code="F", detailed_state="Final", game_pk=1)
+        early = self.row(status_code="FR", detailed_state="Completed Early: Rain", game_pk=2)
+        games, exclusions, stats = normalize_schedule_games_v3(self.payload(final, early), 2012)
+        self.assertEqual(1, len(games))
+        self.assertEqual(1, len(exclusions))
+        self.assertEqual(1, stats["strict_final_unique_game_pks"])
+        self.assertEqual(0, stats["known_domain_exclusions"])
+        self.assertEqual(1, stats["completed_early_domain_exclusions"])
+        self.assertEqual(2, stats["resolved_schedule_game_pks"])
 
 
 if __name__ == "__main__":
