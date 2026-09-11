@@ -6,30 +6,11 @@
   "type": "object",
   "additionalProperties": false,
   "required": [
-    "schema_version",
-    "dataset_id",
-    "dataset_version",
-    "sport",
-    "competition",
-    "market_type",
-    "target_market",
-    "period",
-    "settlement_rules",
-    "target_definition",
-    "feature_schema_version",
-    "created_at",
-    "locked_at",
-    "locked",
-    "dataset_sha256",
-    "row_count",
-    "columns",
-    "feature_columns",
-    "target_column",
-    "line_column",
-    "over_odds_column",
-    "under_odds_column",
-    "timestamp_column",
-    "sort_order"
+    "schema_version", "dataset_id", "dataset_version", "sport", "competition",
+    "market_type", "target_market", "period", "settlement_rules", "target_definition",
+    "feature_schema_version", "created_at", "locked_at", "locked", "dataset_sha256",
+    "row_count", "columns", "feature_columns", "target_column", "line_column",
+    "over_odds_column", "under_odds_column", "timestamp_column", "sort_order"
   ],
   "properties": {
     "schema_version": {"const": "doctore.training-dataset.v1"},
@@ -48,31 +29,23 @@
     "locked": {"const": true},
     "dataset_sha256": {"$ref": "#/$defs/sha256"},
     "row_count": {"type": "integer", "minimum": 1},
-    "columns": {
-      "type": "array",
-      "minItems": 7,
-      "uniqueItems": true,
-      "items": {"type": "string", "minLength": 1}
-    },
-    "feature_columns": {
-      "type": "array",
-      "minItems": 1,
-      "uniqueItems": true,
-      "items": {"type": "string", "minLength": 1}
-    },
+    "columns": {"type": "array", "minItems": 7, "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+    "feature_columns": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
     "target_column": {"type": "string", "minLength": 1},
     "line_column": {"type": "string", "minLength": 1},
     "over_odds_column": {"type": "string", "minLength": 1},
     "under_odds_column": {"type": "string", "minLength": 1},
     "timestamp_column": {"type": "string", "minLength": 1},
-    "sort_order": {"const": "timestamp_strictly_ascending"},
+    "slate_column": {"type": "string", "minLength": 1},
+    "sort_order": {"enum": ["timestamp_strictly_ascending", "timestamp_non_decreasing_grouped"]},
     "source_manifest": {"type": "string", "minLength": 1},
     "notes": {"type": "string"}
   },
-  "$defs": {
-    "sha256": {
-      "type": "string",
-      "pattern": "^[a-fA-F0-9]{64}$"
+  "allOf": [
+    {
+      "if": {"properties": {"sort_order": {"const": "timestamp_non_decreasing_grouped"}}, "required": ["sort_order"]},
+      "then": {"required": ["slate_column"]}
     }
-  }
+  ],
+  "$defs": {"sha256": {"type": "string", "pattern": "^[a-fA-F0-9]{64}$"}}
 }
