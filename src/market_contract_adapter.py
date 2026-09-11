@@ -1,16 +1,15 @@
 """Fail-closed adapter from selection-level odds records to Doctore market snapshots.
 
-The adapter deliberately ignores generic placeholder domain fields from upstream
-records. A record becomes a canonical ``doctore.market-snapshot.v1`` document only
-when the sport, competition, market semantics, and settlement rule are explicitly
-resolved by this module. Otherwise the result is ``DOMAIN_UNVERIFIED`` and no
-canonical snapshot is emitted.
+Upstream placeholder market semantics are never promoted to canonical truth. A
+record becomes ``doctore.market-snapshot.v1`` only when identity, timestamps,
+payoff structure and exact settlement policy are proven. Otherwise the adapter
+returns an explicit blocked status and emits no canonical snapshot.
 """
 from __future__ import annotations
 
 from datetime import datetime
-import hashlib
 import json
+import math
 from pathlib import Path
 import re
 from typing import Any, Iterable, Mapping
@@ -20,6 +19,7 @@ from jsonschema import Draft202012Validator, FormatChecker
 ROOT = Path(__file__).resolve().parents[1]
 MARKET_SCHEMA_PATH = ROOT / "contracts" / "market-snapshot.schema.json"
 MODEL_SCHEMA_PATH = ROOT / "contracts" / "model-output.schema.json"
+SETTLEMENT_REGISTRY_PATH = ROOT / "governance" / "settlement-rule-registry.json"
 
 MARKET_SCHEMA = Draft202012Validator(
     json.loads(MARKET_SCHEMA_PATH.read_text(encoding="utf-8")),
@@ -30,11 +30,7 @@ MODEL_SCHEMA = Draft202012Validator(
     format_checker=FormatChecker(),
 )
 
-CANONICAL_SPORTS = {"MLB", "KBO", "NPB", "TENNIS", "SOCCER", "NBA", "WNBA", "NFL"}
 DIRECT_LEAGUE_SPORTS = {"MLB", "KBO", "NPB", "NBA", "WNBA", "NFL"}
-
-# Explicit allow-list from the current source family. Unknown titles fail closed
-# instead of being guessed to be soccer.
 SOCCER_SOURCE_TITLES = {
     "Argentina",
     "Austrian Football Bundesliga",
@@ -79,18 +75,6 @@ SOCCER_SOURCE_TITLES = {
     "UEFA Nations League",
 }
 
-PLACEHOLDER_VALUES = {
-    "generic",
-    "generic_h2h",
-    "generic_spreads",
-    "generic_totals",
-    "moneyline_or_equivalent",
-    "spreads",
-    "totals",
-    "full_time",
-    "standard_rule_v1",
-}
-
 DOMAIN_FIELDS = (
     "sport",
     "competition",
@@ -112,6 +96,59 @@ JOIN_FIELDS = (
     "settlement_rules",
     "selection",
 )
+
+
+def _load_settlement_registry() -> tuple[dict[tuple[str, str, str], dict[str, Any]], str]:
+    payload = json.loads(SETTLEMENT_REGISTRY_PATH.read_text(encoding="utf-8"))
+    if payload.get("schema_version") != "doctore.settlement-rule-registry.v1":
+        raise RuntimeError("SETTLEMENT_REGISTRY_SCHEMA_INVALID")
+    verified_at = str(payload.get("verified_at") or "").strip()
+    rules = payload.get("rules")
+    if not verified_at or not isinstance(rules, list):
+        raise RuntimeError("SETTLEMENT_REGISTRY_INVALID")
+
+    index: dict[tuple[str, str, str], dict[str, Any]] = {}
+    for rule in rules:
+        if not isinstance(rule, Mapping):
+            raise RuntimeError("SETTLEMENT_REGISTRY_RULE_INVALID")
+        if rule.get("status") != "VERIFIED":
+            continue
+        sport = str(rule.get("sport") or "").strip()
+        book = str(rule.get("book") or "").strip()
+        period = str(rule.get("period") or "").strip()
+        settlement = str(rule.get("settlement_rules") or "").strip()
+        rule_id = str(rule.get("rule_id") or "").strip()
+        evidence_url = str(rule.get("evidence_url") or "").strip()
+        evidence_checked_at = str(rule.get("evidence_checked_at") or "").strip()
+        market_keys = rule.get("market_keys")
+        if not all((sport, book, period, settlement, rule_id, evidence_url, evidence_checked_at)):
+            raise RuntimeError("SETTLEMENT_REGISTRY_RULE_INVALID")
+        if not isinstance(market_keys, list) or not market_keys:
+            raise RuntimeError("SETTLEMENT_REGISTRY_RULE_INVALID")
+        for market_key in market_keys:
+            key = (sport, book, str(market_key))
+            if key in index:
+                raise RuntimeError("SETTLEMENT_REGISTRY_DUPLICATE_RULE")
+            index[key] = dict(rule)
+    return index, verified_at
+
+
+SETTLEMENT_RULE_INDEX, SETTLEMENT_REGISTRY_VERIFIED_AT = _load_settlement_registry()
+
+
+def _settlement_rule(sport: str, book: str, market_key: str) -> dict[str, Any] | None:
+    return SETTLEMENT_RULE_INDEX.get((sport, book, market_key))
+
+
+def _settlement_evidence(rule: Mapping[str, Any] | None) -> dict[str, Any] | None:
+    if rule is None:
+        return None
+    return {
+        "rule_id": rule["rule_id"],
+        "evidence_url": rule["evidence_url"],
+        "evidence_checked_at": rule["evidence_checked_at"],
+        "registry_verified_at": SETTLEMENT_REGISTRY_VERIFIED_AT,
+    }
 
 
 def _schema_errors(validator: Draft202012Validator, payload: Mapping[str, Any]) -> list[str]:
@@ -247,14 +284,10 @@ def _validate_raw_selection(record: Mapping[str, Any], outcomes: list[dict[str, 
             raise ValueError("SELECTED_POINT_MISMATCH")
 
 
-def _baseball_domain(
-    sport: str, market_key: str, line: float | None,
-) -> dict[str, Any] | None:
+def _baseball_domain(sport: str, market_key: str, line: float | None) -> dict[str, Any] | None:
     if sport not in {"MLB", "KBO", "NPB"}:
         return None
-    if market_key == "h2h":
-        if line is not None:
-            return None
+    if market_key == "h2h" and line is None:
         return {
             "market_type": "moneyline",
             "target_market": "full_game_moneyline",
@@ -262,9 +295,7 @@ def _baseball_domain(
             "line": None,
             "settlement_rules": "action_including_extra_innings",
         }
-    if market_key == "spreads":
-        if line is None:
-            return None
+    if market_key == "spreads" and line is not None:
         return {
             "market_type": "run_line",
             "target_market": "full_game_run_line",
@@ -272,9 +303,7 @@ def _baseball_domain(
             "line": line,
             "settlement_rules": "full_game_including_extra_innings",
         }
-    if market_key == "totals":
-        if line is None:
-            return None
+    if market_key == "totals" and line is not None:
         return {
             "market_type": "total",
             "target_market": "full_game_total",
@@ -285,9 +314,7 @@ def _baseball_domain(
     return None
 
 
-def _basketball_domain(
-    sport: str, market_key: str, line: float | None,
-) -> dict[str, Any] | None:
+def _basketball_domain(sport: str, market_key: str, line: float | None) -> dict[str, Any] | None:
     if sport not in {"NBA", "WNBA"}:
         return None
     if market_key == "h2h" and line is None:
@@ -307,59 +334,136 @@ def _basketball_domain(
     }
 
 
-def _unverified_domain_candidate(
-    sport: str, market_key: str, line: float | None, outcomes: list[dict[str, Any]],
-) -> tuple[dict[str, Any] | None, str]:
-    """Return useful normalized diagnostics without promoting them to canonical."""
-    if sport == "SOCCER":
-        if market_key == "h2h" and len(outcomes) == 3 and any(
+def _line_class(line: float | None) -> str:
+    if line is None:
+        return "missing"
+    quarter_units = round(line * 4)
+    if not math.isclose(line * 4, quarter_units, abs_tol=1e-9):
+        return "other"
+    modulo = abs(quarter_units) % 4
+    if modulo == 0:
+        return "integer"
+    if modulo == 2:
+        return "half"
+    return "quarter"
+
+
+def _total_structure_valid(outcomes: list[dict[str, Any]], line: float) -> bool:
+    if len(outcomes) != 2:
+        return False
+    names = {item["name"].casefold() for item in outcomes}
+    if names != {"over", "under"}:
+        return False
+    return all(
+        "point" in item and math.isclose(float(item["point"]), line, abs_tol=1e-9)
+        for item in outcomes
+    )
+
+
+def _blocked_domain(
+    *, market_type: str, target_market: str, period: str, line: float | None,
+) -> dict[str, Any]:
+    return {
+        "market_type": market_type,
+        "target_market": target_market,
+        "period": period,
+        "line": line,
+        "settlement_rules": None,
+    }
+
+
+def _soccer_domain(
+    *, book: str, market_key: str, line: float | None, outcomes: list[dict[str, Any]],
+) -> tuple[dict[str, Any] | None, str | None, dict[str, Any] | None]:
+    if market_key == "spreads":
+        line_type = _line_class(line)
+        candidate = _blocked_domain(
+            market_type="asian_handicap" if line_type in {"quarter", "integer"} else "spread",
+            target_market="full_time_handicap",
+            period="regulation_time",
+            line=line,
+        )
+        if line_type == "quarter":
+            return None, "ASIAN_QUARTER_LINE_UNSUPPORTED", candidate
+        if line_type == "integer":
+            return None, "PUSH_SETTLEMENT_UNSUPPORTED", candidate
+        return None, "SOCCER_HANDICAP_SETTLEMENT_UNVERIFIED", candidate
+
+    rule = _settlement_rule("SOCCER", book, market_key)
+    if market_key == "h2h":
+        candidate = _blocked_domain(
+            market_type="1x2", target_market="full_time_1x2",
+            period="regulation_time", line=None,
+        )
+        if line is not None or len(outcomes) != 3 or not any(
             item["name"].casefold() == "draw" for item in outcomes
         ):
-            return {
-                "market_type": "1x2",
-                "target_market": "full_time_1x2",
-                "period": "regulation_time",
-                "line": None,
-                "settlement_rules": None,
-            }, "SOCCER_SETTLEMENT_RULE_UNVERIFIED"
-        if market_key == "spreads":
-            return {
-                "market_type": "spread",
-                "target_market": "full_time_spread",
-                "period": "regulation_time",
-                "line": line,
-                "settlement_rules": None,
-            }, "SOCCER_SETTLEMENT_RULE_UNVERIFIED"
-        if market_key == "totals":
-            return {
-                "market_type": "total",
-                "target_market": "full_time_total",
-                "period": "regulation_time",
-                "line": line,
-                "settlement_rules": None,
-            }, "SOCCER_SETTLEMENT_RULE_UNVERIFIED"
-    if sport == "TENNIS":
-        if market_key == "h2h":
-            market_type, target, candidate_line = "match_moneyline", "full_match_moneyline", None
-        elif market_key == "spreads":
-            market_type, target, candidate_line = "game_spread", "full_match_game_spread", line
-        elif market_key == "totals":
-            market_type, target, candidate_line = "game_total", "full_match_game_total", line
-        else:
-            return None, "TENNIS_DOMAIN_UNVERIFIED"
+            return None, "SOCCER_1X2_STRUCTURE_INVALID", candidate
+        if rule is None:
+            return None, "BOOK_SETTLEMENT_RULE_UNVERIFIED", candidate
         return {
-            "market_type": market_type,
-            "target_market": target,
-            "period": "full_match",
-            "line": candidate_line,
-            "settlement_rules": None,
-        }, "TENNIS_RETIREMENT_SETTLEMENT_UNVERIFIED"
-    return None, "DOMAIN_UNVERIFIED"
+            "market_type": "1x2",
+            "target_market": "full_time_1x2",
+            "period": rule["period"],
+            "line": None,
+            "settlement_rules": rule["settlement_rules"],
+        }, None, rule
+
+    if market_key == "totals":
+        candidate = _blocked_domain(
+            market_type="total", target_market="full_time_total",
+            period="regulation_time", line=line,
+        )
+        line_type = _line_class(line)
+        if line_type == "quarter":
+            return None, "ASIAN_QUARTER_LINE_UNSUPPORTED", candidate
+        if line_type == "integer":
+            return None, "PUSH_SETTLEMENT_UNSUPPORTED", candidate
+        if line_type != "half" or line is None:
+            return None, "LINE_SETTLEMENT_UNSUPPORTED", candidate
+        if not _total_structure_valid(outcomes, line):
+            return None, "SOCCER_TOTAL_STRUCTURE_INVALID", candidate
+        if rule is None:
+            return None, "BOOK_SETTLEMENT_RULE_UNVERIFIED", candidate
+        return {
+            "market_type": "total",
+            "target_market": "full_time_total",
+            "period": rule["period"],
+            "line": line,
+            "settlement_rules": rule["settlement_rules"],
+        }, None, rule
+
+    return None, "SOCCER_DOMAIN_UNVERIFIED", None
 
 
-def _canonical_outcomes(
-    outcomes: list[dict[str, Any]], *, market_type: str,
-) -> list[dict[str, Any]]:
+def _tennis_domain(
+    *, book: str, market_key: str, line: float | None, outcomes: list[dict[str, Any]],
+) -> tuple[dict[str, Any] | None, str | None, dict[str, Any] | None]:
+    if market_key != "h2h":
+        market_type = "game_spread" if market_key == "spreads" else "game_total"
+        target = "full_match_game_spread" if market_key == "spreads" else "full_match_game_total"
+        return None, "TENNIS_NON_MONEYLINE_SETTLEMENT_UNVERIFIED", _blocked_domain(
+            market_type=market_type, target_market=target, period="full_match", line=line,
+        )
+    candidate = _blocked_domain(
+        market_type="match_moneyline", target_market="full_match_moneyline",
+        period="full_match", line=None,
+    )
+    if line is not None or len(outcomes) != 2:
+        return None, "TENNIS_MATCH_MONEYLINE_STRUCTURE_INVALID", candidate
+    rule = _settlement_rule("TENNIS", book, market_key)
+    if rule is None:
+        return None, "BOOK_SETTLEMENT_RULE_UNVERIFIED", candidate
+    return {
+        "market_type": "match_moneyline",
+        "target_market": "full_match_moneyline",
+        "period": rule["period"],
+        "line": None,
+        "settlement_rules": rule["settlement_rules"],
+    }, None, rule
+
+
+def _canonical_outcomes(outcomes: list[dict[str, Any]], *, market_type: str) -> list[dict[str, Any]]:
     result = []
     for item in outcomes:
         selection = item["name"]
@@ -369,13 +473,27 @@ def _canonical_outcomes(
     return result
 
 
-def adapt_selection_record(record: Mapping[str, Any]) -> dict[str, Any]:
-    """Adapt one source selection record to a canonical market snapshot.
+def _adapter_wrapper(
+    *, status: str, reason_codes: list[str], normalized: Mapping[str, Any] | None,
+    domain: Mapping[str, Any] | None, market_snapshot: Mapping[str, Any] | None,
+    source_identity: Mapping[str, Any], settlement_evidence: Mapping[str, Any] | None = None,
+    diagnostics: list[str] | None = None,
+) -> dict[str, Any]:
+    result = {
+        "status": status,
+        "reason_codes": reason_codes,
+        "normalized": dict(normalized) if normalized is not None else None,
+        "domain": dict(domain) if domain is not None else None,
+        "market_snapshot": dict(market_snapshot) if market_snapshot is not None else None,
+        "source_identity": dict(source_identity),
+        "settlement_evidence": dict(settlement_evidence) if settlement_evidence is not None else None,
+    }
+    if diagnostics is not None:
+        result["diagnostics"] = diagnostics
+    return result
 
-    Returns a wrapper with ``status``. Only ``status == 'CANONICAL'`` contains a
-    non-null ``market_snapshot``. Placeholder domain fields in ``record`` are
-    never copied into the canonical document.
-    """
+
+def adapt_selection_record(record: Mapping[str, Any]) -> dict[str, Any]:
     source_identity = {
         "selection_id": record.get("selection_id"),
         "source_event_id": record.get("source_event_id"),
@@ -387,31 +505,48 @@ def adapt_selection_record(record: Mapping[str, Any]) -> dict[str, Any]:
         _validate_raw_selection(record, outcomes)
         sport, competition = _normalize_sport_competition(record)
     except (TypeError, ValueError) as exc:
-        return {
-            "status": "INVALID_INPUT",
-            "reason_codes": [str(exc)],
-            "normalized": None,
-            "domain": None,
-            "market_snapshot": None,
-            "source_identity": source_identity,
-        }
+        return _adapter_wrapper(
+            status="INVALID_INPUT", reason_codes=[str(exc)], normalized=None,
+            domain=None, market_snapshot=None, source_identity=source_identity,
+        )
 
     market_key = str(record.get("market_key") or "").strip()
+    book = str(record.get("bookmaker") or "").strip()
     raw_point = record.get("point")
     line = None if raw_point is None else float(raw_point)
-    domain = _baseball_domain(sport, market_key, line) or _basketball_domain(sport, market_key, line)
-
     normalized = {"sport": sport, "competition": competition}
+
+    domain = _baseball_domain(sport, market_key, line) or _basketball_domain(sport, market_key, line)
+    reason: str | None = None
+    rule: Mapping[str, Any] | None = None
+    candidate: Mapping[str, Any] | None = None
+
+    if domain is None and sport == "SOCCER":
+        domain, reason, aux = _soccer_domain(
+            book=book, market_key=market_key, line=line, outcomes=outcomes,
+        )
+        if domain is None:
+            candidate = aux
+        else:
+            rule = aux
+    elif domain is None and sport == "TENNIS":
+        domain, reason, aux = _tennis_domain(
+            book=book, market_key=market_key, line=line, outcomes=outcomes,
+        )
+        if domain is None:
+            candidate = aux
+        else:
+            rule = aux
+
     if domain is None:
-        candidate, reason = _unverified_domain_candidate(sport, market_key, line, outcomes)
-        return {
-            "status": "DOMAIN_UNVERIFIED",
-            "reason_codes": [reason],
-            "normalized": normalized,
-            "domain": candidate,
-            "market_snapshot": None,
-            "source_identity": source_identity,
-        }
+        return _adapter_wrapper(
+            status="DOMAIN_UNVERIFIED",
+            reason_codes=[reason or "DOMAIN_UNVERIFIED"],
+            normalized=normalized,
+            domain=candidate,
+            market_snapshot=None,
+            source_identity=source_identity,
+        )
 
     raw_selection = str(record["selection_name"]).strip()
     selection = raw_selection.casefold() if domain["market_type"] == "total" else raw_selection
@@ -426,7 +561,7 @@ def adapt_selection_record(record: Mapping[str, Any]) -> dict[str, Any]:
             selection=selection,
             line=domain["line"],
         ),
-        "book": str(record["bookmaker"]),
+        "book": book,
         "captured_at": str(record["captured_at"]),
         "event_start_at": str(record["event_start_at"]),
         "sport": sport,
@@ -447,24 +582,18 @@ def adapt_selection_record(record: Mapping[str, Any]) -> dict[str, Any]:
 
     errors = _schema_errors(MARKET_SCHEMA, snapshot)
     if errors:
-        return {
-            "status": "INVALID_INPUT",
-            "reason_codes": ["CANONICAL_SCHEMA_INVALID"],
-            "diagnostics": errors,
-            "normalized": normalized,
-            "domain": {**normalized, **domain},
-            "market_snapshot": None,
-            "source_identity": source_identity,
-        }
+        return _adapter_wrapper(
+            status="INVALID_INPUT", reason_codes=["CANONICAL_SCHEMA_INVALID"],
+            diagnostics=errors, normalized=normalized,
+            domain={**normalized, **domain}, market_snapshot=None,
+            source_identity=source_identity, settlement_evidence=_settlement_evidence(rule),
+        )
 
-    return {
-        "status": "CANONICAL",
-        "reason_codes": [],
-        "normalized": normalized,
-        "domain": {**normalized, **domain},
-        "market_snapshot": snapshot,
-        "source_identity": source_identity,
-    }
+    return _adapter_wrapper(
+        status="CANONICAL", reason_codes=[], normalized=normalized,
+        domain={**normalized, **domain}, market_snapshot=snapshot,
+        source_identity=source_identity, settlement_evidence=_settlement_evidence(rule),
+    )
 
 
 def adapt_selection_records(records: Iterable[Mapping[str, Any]]) -> list[dict[str, Any]]:
@@ -487,12 +616,7 @@ def exact_model_output_join(
     market_snapshot: Mapping[str, Any],
     model_outputs: Iterable[Mapping[str, Any]],
 ) -> dict[str, Any]:
-    """Join a canonical market snapshot to exactly one model output.
-
-    Book and price are intentionally excluded from the model-domain identity.
-    Every event/market/domain/selection field must match exactly, including the
-    model's ``validation_domain``. Ambiguous or invalid candidates fail closed.
-    """
+    """Join a canonical market snapshot to exactly one exact-domain model output."""
     market_errors = _schema_errors(MARKET_SCHEMA, market_snapshot)
     if market_errors:
         return {
