@@ -1,0 +1,64 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://doctore.local/schemas/feature-provenance-record.schema.json",
+  "title": "Doctore point-in-time feature provenance record",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "event_id",
+    "feature_group",
+    "source",
+    "source_record_id",
+    "availability_mode",
+    "feature_cutoff_at",
+    "source_sha256"
+  ],
+  "properties": {
+    "schema_version": {"const": "doctore.feature-provenance.v1"},
+    "event_id": {"type": "string", "minLength": 1},
+    "feature_group": {"enum": ["baseline", "starter", "bullpen", "park", "weather"]},
+    "source": {"type": "string", "minLength": 1},
+    "source_record_id": {"type": "string", "minLength": 1},
+    "availability_mode": {
+      "enum": [
+        "PRIOR_EVENT_FINAL",
+        "PREGAME_SNAPSHOT",
+        "FORECAST_RUN",
+        "STATIC_KNOWN_BEFORE_CUTOFF"
+      ]
+    },
+    "feature_cutoff_at": {"type": "string", "format": "date-time"},
+    "source_sha256": {"$ref": "#/$defs/sha256"},
+    "source_event_id": {"type": "string", "minLength": 1},
+    "source_event_end_at": {"type": "string", "format": "date-time"},
+    "observed_at": {"type": "string", "format": "date-time"},
+    "forecast_issued_at": {"type": "string", "format": "date-time"},
+    "forecast_target_at": {"type": "string", "format": "date-time"},
+    "effective_at": {"type": "string", "format": "date-time"}
+  },
+  "allOf": [
+    {
+      "if": {"properties": {"availability_mode": {"const": "PRIOR_EVENT_FINAL"}}},
+      "then": {"required": ["source_event_id", "source_event_end_at"]}
+    },
+    {
+      "if": {"properties": {"availability_mode": {"const": "PREGAME_SNAPSHOT"}}},
+      "then": {"required": ["observed_at"]}
+    },
+    {
+      "if": {"properties": {"availability_mode": {"const": "FORECAST_RUN"}}},
+      "then": {"required": ["forecast_issued_at", "forecast_target_at"]}
+    },
+    {
+      "if": {"properties": {"availability_mode": {"const": "STATIC_KNOWN_BEFORE_CUTOFF"}}},
+      "then": {"required": ["observed_at", "effective_at"]}
+    }
+  ],
+  "$defs": {
+    "sha256": {
+      "type": "string",
+      "pattern": "^[a-fA-F0-9]{64}$"
+    }
+  }
+}
