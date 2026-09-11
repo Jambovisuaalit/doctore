@@ -54,35 +54,65 @@ jobs:
           manifest = json.loads(manifest_bytes)
           expected = (root / 'manifest.sha256').read_text().strip()
           assert sha256(manifest_bytes).hexdigest() == expected
+          assert manifest['schema_version'] == 'doctore.mlb-feature-source-manifest.v2'
 
           records_path = root / manifest['records_file']
           records_bytes = records_path.read_bytes()
           assert sha256(records_bytes).hexdigest() == manifest['records_sha256']
           records = [json.loads(line) for line in records_bytes.splitlines() if line.strip()]
           assert len(records) == manifest['normalized_source_records']
+          assert len({row['game_pk'] for row in records}) == len(records)
 
           rejects_path = root / 'rejects.json'
           rejects_bytes = rejects_path.read_bytes()
           assert sha256(rejects_bytes).hexdigest() == manifest['rejects_sha256']
-          rejects = json.loads(rejects_bytes)['rejects']
+          reject_payload = json.loads(rejects_bytes)
+          assert reject_payload['schema_version'] == 'doctore.mlb-feature-source-rejects.v2'
+          rejects = reject_payload['rejects']
 
-          assert manifest['normalized_source_records'] + manifest['timestamp_or_core_reject_count'] == manifest['eligible_schedule_games']
+          # Unique strict-final gamePks partition into schedule-domain/conflict exclusions
+          # plus candidates that proceed to optional hydration/source acquisition.
+          assert manifest['strict_final_unique_game_pks'] == (
+              manifest['schedule_candidates']
+              + manifest['known_domain_exclusions']
+              + manifest['strict_final_conflicts']
+          )
+          assert manifest['eligible_schedule_games'] == manifest['schedule_candidates']
+
+          # Every candidate has exactly one terminal outcome.
+          assert manifest['schedule_candidates'] == (
+              manifest['normalized_source_records']
+              + manifest['timestamp_or_core_reject_count']
+              + manifest['hydration_reject_count']
+              + manifest['hydrated_domain_exclusions']
+          )
+          assert manifest['hydration_attempted'] == (
+              manifest['hydrated_candidates']
+              + manifest['hydration_reject_count']
+              + manifest['hydrated_domain_exclusions']
+          )
+
+          # Reschedule/postponed rows are metadata, never fake field-missing rejects.
+          assert manifest['duplicate_schedule_rows'] >= manifest['reschedule_or_nonfinal_metadata_rows']
+          assert 'SCHEDULE_FIELDS_MISSING' not in manifest['reason_counts']
+
           assert manifest['park_pass_records'] == manifest['normalized_source_records']
           assert manifest['bullpen_pass_records'] + manifest['bullpen_blocked_records'] == manifest['normalized_source_records']
           assert sum(1 for row in records if row['park_status'] == 'PASS') == manifest['park_pass_records']
           assert sum(1 for row in records if row['bullpen_status'] == 'PASS') == manifest['bullpen_pass_records']
           assert sum(1 for row in records if row['bullpen_status'] == 'BLOCKED') == manifest['bullpen_blocked_records']
 
-          required_reject_context = {
+          source_rejects = [row for row in rejects if row.get('stage') == 'source']
+          assert len(source_rejects) == manifest['timestamp_or_core_reject_count']
+          required_source_context = {
               'game_pk', 'event_id', 'official_date', 'event_start_at',
               'venue_id', 'away_team_id', 'home_team_id', 'reason', 'detail',
           }
-          eligible_game_rejects = [row for row in rejects if 'reason' in row]
-          assert len(eligible_game_rejects) == manifest['timestamp_or_core_reject_count']
-          for row in eligible_game_rejects:
-              assert required_reject_context.issubset(row), row
+          for row in source_rejects:
+              assert required_source_context.issubset(row), row
+              assert all(row.get(key) is not None for key in required_source_context - {'detail'}), row
 
-          assert manifest['acquisition_policy'] == 'park_retained_when_bullpen_blocked_explicit_rejects_no_silent_drop'
+          assert manifest['acquisition_policy'] == 'strict_final_gamepk_dedupe_live_hydration_fail_closed_v2'
           print(json.dumps(manifest, indent=2, sort_keys=True))
           PY
         env:
