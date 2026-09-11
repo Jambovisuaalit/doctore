@@ -1,15 +1,15 @@
 """Normalize authoritative MLB source data for feature-schema v2.
 
-The normalized record contains only fields required by park/bullpen research and
-point-in-time provenance. Network acquisition lives in the CLI; this module is
-pure and testable.
+Park provenance is independent of bullpen parsing. A valid schedule + MLB game
+update timestamp can therefore remain park-usable even when the boxscore cannot
+prove a unique starter/bullpen split.
 """
 from __future__ import annotations
 
 from datetime import datetime, timezone
 from hashlib import sha256
 import json
-from typing import Any, Mapping, Sequence
+from typing import Any, Mapping
 
 SOURCE_SCHEMA_VERSION = "doctore.mlb-feature-source.v1"
 
@@ -38,9 +38,7 @@ def final_event_at_from_timestamps(payload: Any) -> str:
     if not isinstance(payload, list) or not payload:
         raise SourceAcquisitionError("timestamps payload must be a non-empty list")
     values = [str(value) for value in payload]
-    # Fixed YYYYMMDD_HHMMSS format is chronologically lexicographically sortable.
-    latest = max(values)
-    return mlb_timecode_to_iso(latest)
+    return mlb_timecode_to_iso(max(values))
 
 
 def normalize_schedule_games(payload: Mapping[str, Any], season: int) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
@@ -79,7 +77,7 @@ def normalize_schedule_games(payload: Mapping[str, Any], season: int) -> tuple[l
                     "away_score": int(away["score"]),
                     "home_score": int(home["score"]),
                 }
-            except (KeyError, TypeError, ValueError) as exc:
+            except (KeyError, TypeError, ValueError):
                 reasons.append("SCHEDULE_FIELDS_MISSING")
                 selected = {"game_pk": game_pk, "official_date": official_date}
             if not game_pk:
@@ -87,7 +85,10 @@ def normalize_schedule_games(payload: Mapping[str, Any], season: int) -> tuple[l
             if game_pk in seen:
                 reasons.append("DUPLICATE_GAME_PK")
             if reasons:
-                rejected.append({"game_pk": game_pk, "reasons": sorted(set(reasons))})
+                rejected.append({
+                    **selected,
+                    "reasons": sorted(set(reasons)),
+                })
                 continue
             seen.add(game_pk)
             games.append(selected)
@@ -151,20 +152,17 @@ def normalize_team_pitching(team_box: Mapping[str, Any], expected_team_id: int) 
 def normalize_game_source(
     schedule_game: Mapping[str, Any],
     *,
-    boxscore_bytes: bytes,
     timestamps_bytes: bytes,
+    boxscore_bytes: bytes | None = None,
+    bullpen_error: str | None = None,
 ) -> dict[str, Any]:
     try:
-        boxscore = json.loads(boxscore_bytes.decode("utf-8"))
         timestamps = json.loads(timestamps_bytes.decode("utf-8"))
     except (UnicodeDecodeError, json.JSONDecodeError) as exc:
-        raise SourceAcquisitionError("invalid upstream JSON") from exc
-
-    away = normalize_team_pitching(boxscore.get("teams", {}).get("away", {}), int(schedule_game["away_team_id"]))
-    home = normalize_team_pitching(boxscore.get("teams", {}).get("home", {}), int(schedule_game["home_team_id"]))
+        raise SourceAcquisitionError("invalid timestamps JSON") from exc
     final_event_at = final_event_at_from_timestamps(timestamps)
 
-    base = {
+    base: dict[str, Any] = {
         "schema_version": SOURCE_SCHEMA_VERSION,
         "game_pk": int(schedule_game["game_pk"]),
         "event_id": f"mlb:{int(schedule_game['game_pk'])}",
@@ -180,16 +178,30 @@ def normalize_game_source(
         "away_score": int(schedule_game["away_score"]),
         "home_score": int(schedule_game["home_score"]),
         "final_total_runs": int(schedule_game["away_score"]) + int(schedule_game["home_score"]),
-        "away_pitching": away,
-        "home_pitching": home,
+        "park_status": "PASS",
         "lineage": {
             "schedule_source": "MLB StatsAPI /api/v1/schedule",
             "boxscore_source": f"MLB StatsAPI /api/v1/game/{int(schedule_game['game_pk'])}/boxscore",
             "timestamps_source": f"MLB StatsAPI /api/v1.1/game/{int(schedule_game['game_pk'])}/feed/live/timestamps",
-            "boxscore_sha256": sha256_bytes(boxscore_bytes),
+            "boxscore_sha256": sha256_bytes(boxscore_bytes) if boxscore_bytes is not None else None,
             "timestamps_sha256": sha256_bytes(timestamps_bytes),
         },
     }
+
+    if boxscore_bytes is None:
+        base["bullpen_status"] = "BLOCKED"
+        base["bullpen_reason"] = bullpen_error or "BOXSCORE_UNAVAILABLE"
+    else:
+        try:
+            boxscore = json.loads(boxscore_bytes.decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+            raise SourceAcquisitionError("invalid boxscore JSON") from exc
+        away = normalize_team_pitching(boxscore.get("teams", {}).get("away", {}), int(schedule_game["away_team_id"]))
+        home = normalize_team_pitching(boxscore.get("teams", {}).get("home", {}), int(schedule_game["home_team_id"]))
+        base["bullpen_status"] = "PASS"
+        base["away_pitching"] = away
+        base["home_pitching"] = home
+
     digest = sha256_bytes(canonical_bytes(base))
     return {
         **base,
