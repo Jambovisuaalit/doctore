@@ -1,0 +1,83 @@
+name: MLB 2014 conflict probe
+
+on:
+  push:
+    branches: ['research/mlb-2014-conflict-probe']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 1
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Probe authoritative schedule and live values
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from urllib.request import urlopen
+
+          targets = {380729, 381243, 382421, 382573, 382643}
+          schedule_url = 'https://statsapi.mlb.com/api/v1/schedule?sportId=1&season=2014&gameType=R'
+          schedule = json.load(urlopen(schedule_url, timeout=30))
+          rows = {}
+          for block in schedule.get('dates', []):
+              for row in block.get('games', []):
+                  pk = row.get('gamePk')
+                  if pk in targets:
+                      status = row.get('status') or {}
+                      teams = row.get('teams') or {}
+                      rows.setdefault(pk, []).append({
+                          'gameDate': row.get('gameDate'),
+                          'officialDate': row.get('officialDate'),
+                          'scheduledInnings': row.get('scheduledInnings'),
+                          'venue': row.get('venue'),
+                          'statusCode': status.get('statusCode'),
+                          'codedGameState': status.get('codedGameState'),
+                          'detailedState': status.get('detailedState'),
+                          'away': teams.get('away'),
+                          'home': teams.get('home'),
+                      })
+
+          out = {}
+          for pk in sorted(targets):
+              live = json.load(urlopen(f'https://statsapi.mlb.com/api/v1.1/game/{pk}/feed/live', timeout=30))
+              gd = live.get('gameData') or {}
+              ld = live.get('liveData') or {}
+              ls = ld.get('linescore') or {}
+              out[str(pk)] = {
+                  'schedule_rows': rows.get(pk, []),
+                  'live': {
+                      'gamePk': live.get('gamePk'),
+                      'officialDate': (gd.get('datetime') or {}).get('officialDate'),
+                      'dateTime': (gd.get('datetime') or {}).get('dateTime'),
+                      'status': gd.get('status'),
+                      'venue': gd.get('venue'),
+                      'away_team': (gd.get('teams') or {}).get('away'),
+                      'home_team': (gd.get('teams') or {}).get('home'),
+                      'scheduledInnings': ls.get('scheduledInnings'),
+                      'away_runs': ((ls.get('teams') or {}).get('away') or {}).get('runs'),
+                      'home_runs': ((ls.get('teams') or {}).get('home') or {}).get('runs'),
+                  },
+              }
+          print(json.dumps(out, indent=2, sort_keys=True))
+          with open('mlb-2014-conflict-probe.json', 'w') as f:
+              json.dump(out, f, indent=2, sort_keys=True)
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mlb-2014-conflict-probe-${{ github.sha }}
+          path: mlb-2014-conflict-probe.json
+          if-no-files-found: error
+          retention-days: 7
