@@ -13,7 +13,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
-      - name: Probe 2012 schedule rejects
+      - name: Probe schedule versus live hydrate fields
         shell: bash
         run: |
           set -euo pipefail
@@ -21,7 +21,7 @@ jobs:
           import json
           from urllib.request import Request, urlopen
 
-          game_pks = [317795, 317938, 317966, 318066, 320089]
+          game_pks = {317795, 317938, 317966, 318066, 320089}
           headers = {'User-Agent': 'Doctore-Sports/1.0 research-probe'}
 
           def get(url):
@@ -29,25 +29,33 @@ jobs:
               with urlopen(req, timeout=90) as response:
                   return json.loads(response.read().decode('utf-8'))
 
-          for game_pk in game_pks:
+          schedule = get('https://statsapi.mlb.com/api/v1/schedule?sportId=1&season=2012&gameType=R')
+          raw_by_pk = {}
+          for block in schedule.get('dates', []):
+              for raw in block.get('games', []):
+                  if raw.get('gamePk') in game_pks:
+                      raw_by_pk.setdefault(raw['gamePk'], []).append(raw)
+
+          for game_pk in sorted(game_pks):
               payload = get(f'https://statsapi.mlb.com/api/v1.1/game/{game_pk}/feed/live')
               gd = payload.get('gameData', {})
               live = payload.get('liveData', {})
-              box = live.get('boxscore', {})
-              linescore = live.get('linescore', {})
               summary = {
                   'gamePk': game_pk,
-                  'status': gd.get('status', {}),
-                  'datetime': gd.get('datetime', {}),
-                  'venue': gd.get('venue', {}),
-                  'away_team': ((gd.get('teams') or {}).get('away') or {}).get('name'),
-                  'home_team': ((gd.get('teams') or {}).get('home') or {}).get('name'),
-                  'linescore_teams': linescore.get('teams', {}),
-                  'boxscore_team_ids': {
-                      side: (((box.get('teams') or {}).get(side) or {}).get('team') or {}).get('id')
+                  'schedule_rows': raw_by_pk.get(game_pk, []),
+                  'live_game': gd.get('game', {}),
+                  'live_status': gd.get('status', {}),
+                  'live_datetime': gd.get('datetime', {}),
+                  'live_venue': gd.get('venue', {}),
+                  'live_teams': {
+                      side: {
+                          'id': ((gd.get('teams') or {}).get(side) or {}).get('id'),
+                          'name': ((gd.get('teams') or {}).get(side) or {}).get('name'),
+                      }
                       for side in ('away', 'home')
                   },
-                  'timestamps_last': (payload.get('metaData') or {}).get('timeStamp'),
+                  'live_linescore_teams': (live.get('linescore') or {}).get('teams', {}),
+                  'live_meta_timestamp': (payload.get('metaData') or {}).get('timeStamp'),
               }
               print(json.dumps(summary, sort_keys=True))
           PY
