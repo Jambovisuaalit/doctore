@@ -38,7 +38,7 @@ jobs:
             --workers 6 \
             --output-dir results/mlb-v2-source-${{ matrix.season }}
 
-      - name: Verify artifact hashes and explicit-reject manifest
+      - name: Verify artifact hashes and completeness invariants
         shell: bash
         run: |
           set -euo pipefail
@@ -54,11 +54,35 @@ jobs:
           manifest = json.loads(manifest_bytes)
           expected = (root / 'manifest.sha256').read_text().strip()
           assert sha256(manifest_bytes).hexdigest() == expected
-          records = root / manifest['records_file']
-          assert sha256(records.read_bytes()).hexdigest() == manifest['records_sha256']
-          rejects = root / 'rejects.json'
-          assert sha256(rejects.read_bytes()).hexdigest() == manifest['rejects_sha256']
-          assert manifest['normalized_source_records'] + manifest['fetch_or_normalization_reject_count'] == manifest['eligible_schedule_games']
+
+          records_path = root / manifest['records_file']
+          records_bytes = records_path.read_bytes()
+          assert sha256(records_bytes).hexdigest() == manifest['records_sha256']
+          records = [json.loads(line) for line in records_bytes.splitlines() if line.strip()]
+          assert len(records) == manifest['normalized_source_records']
+
+          rejects_path = root / 'rejects.json'
+          rejects_bytes = rejects_path.read_bytes()
+          assert sha256(rejects_bytes).hexdigest() == manifest['rejects_sha256']
+          rejects = json.loads(rejects_bytes)['rejects']
+
+          assert manifest['normalized_source_records'] + manifest['timestamp_or_core_reject_count'] == manifest['eligible_schedule_games']
+          assert manifest['park_pass_records'] == manifest['normalized_source_records']
+          assert manifest['bullpen_pass_records'] + manifest['bullpen_blocked_records'] == manifest['normalized_source_records']
+          assert sum(1 for row in records if row['park_status'] == 'PASS') == manifest['park_pass_records']
+          assert sum(1 for row in records if row['bullpen_status'] == 'PASS') == manifest['bullpen_pass_records']
+          assert sum(1 for row in records if row['bullpen_status'] == 'BLOCKED') == manifest['bullpen_blocked_records']
+
+          required_reject_context = {
+              'game_pk', 'event_id', 'official_date', 'event_start_at',
+              'venue_id', 'away_team_id', 'home_team_id', 'reason', 'detail',
+          }
+          eligible_game_rejects = [row for row in rejects if 'reason' in row]
+          assert len(eligible_game_rejects) == manifest['timestamp_or_core_reject_count']
+          for row in eligible_game_rejects:
+              assert required_reject_context.issubset(row), row
+
+          assert manifest['acquisition_policy'] == 'park_retained_when_bullpen_blocked_explicit_rejects_no_silent_drop'
           print(json.dumps(manifest, indent=2, sort_keys=True))
           PY
         env:
