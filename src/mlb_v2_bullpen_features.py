@@ -168,20 +168,28 @@ def materialize_bullpen_group(
     contributing: dict[str, Mapping[str, Any]] = {}
 
     for record in source_records:
-        source_event_id = str(record.get("event_id", "")).strip()
-        if source_event_id == event_id:
-            reason_codes.add("CURRENT_EVENT_RESULT_LEAKAGE")
+        relevant_sides = [
+            (team_id, side)
+            for team_id, side in ((away_team_id, "AWAY"), (home_team_id, "HOME"))
+            if _record_has_team(record, team_id)
+        ]
+        if not relevant_sides:
             continue
+
+        source_event_id = str(record.get("event_id", "")).strip()
         try:
             final_at = _ts(record.get("final_event_at"), f"final_event_at[{source_event_id}]")
         except BullpenMaterializationError:
+            for _, side in relevant_sides:
+                reason_codes.add(f"{side}_BULLPEN_SOURCE_FINAL_AT_INVALID")
             continue
         if not (lower <= final_at < cutoff):
             continue
+        if source_event_id == event_id:
+            reason_codes.add("CURRENT_EVENT_RESULT_LEAKAGE")
+            continue
 
-        for team_id, side in ((away_team_id, "AWAY"), (home_team_id, "HOME")):
-            if not _record_has_team(record, team_id):
-                continue
+        for team_id, side in relevant_sides:
             if record.get("bullpen_status") != "PASS":
                 reason_codes.add(f"{side}_BULLPEN_SOURCE_BLOCKED_IN_3D")
                 continue
