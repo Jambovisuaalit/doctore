@@ -40,12 +40,26 @@ def main() -> int:
         # Exact model join is intentionally downstream of canonical adaptation.
         results = [adapt_and_join_selection_record(record, models) for record in records]
 
-    counts = Counter(result["status"] for result in results)
+    status_counts = Counter(result["status"] for result in results)
+    reason_counts = Counter(
+        reason
+        for result in results
+        for reason in result.get("reason_codes", [])
+    )
+    canonical_records = sum(
+        1 for result in results
+        if (result["status"] == "CANONICAL" if models is None else result["status"] == "MATCHED")
+    )
+    blocked_records = len(results) - canonical_records
+
     payload = {
         "schema_version": "doctore.market-contract-adapter-run.v1",
         "input_records": len(records),
         "model_join_requested": models is not None,
-        "status_counts": dict(sorted(counts.items())),
+        "canonical_records": canonical_records,
+        "blocked_records": blocked_records,
+        "status_counts": dict(sorted(status_counts.items())),
+        "reason_counts": dict(sorted(reason_counts.items())),
         "results": results,
     }
     text = json.dumps(payload, ensure_ascii=False, sort_keys=True, indent=2) + "\n"
@@ -58,7 +72,7 @@ def main() -> int:
         sys.stdout.write(text)
 
     allowed = {"CANONICAL"} if models is None else {"MATCHED"}
-    return 0 if set(counts).issubset(allowed) else 1
+    return 0 if set(status_counts).issubset(allowed) else 1
 
 
 if __name__ == "__main__":

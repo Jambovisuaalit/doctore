@@ -1,0 +1,110 @@
+{
+  "schema_version": "doctore.settlement-rule-registry.v1",
+  "verified_at": "2026-09-11",
+  "rules": [
+    {
+      "rule_id": "soccer.pinnacle.regulation90.v1",
+      "sport": "SOCCER",
+      "book": "Pinnacle",
+      "market_keys": ["h2h", "totals"],
+      "period": "regulation_time",
+      "settlement_rules": "soccer_90min_including_stoppage_no_extra_time_v1",
+      "status": "VERIFIED",
+      "evidence_url": "https://www.pinnacle.com/en/future/betting-rules",
+      "evidence_checked_at": "2026-09-11",
+      "evidence_scope": "official-book-rules",
+      "note": "Soccer match markets are based on scheduled 90 minutes including injury/stoppage time and excluding extra time and penalties unless otherwise stated."
+    },
+    {
+      "rule_id": "soccer.betsson.regulation90.v1",
+      "sport": "SOCCER",
+      "book": "Betsson",
+      "market_keys": ["h2h", "totals"],
+      "period": "regulation_time",
+      "settlement_rules": "soccer_90min_including_stoppage_no_extra_time_v1",
+      "status": "VERIFIED",
+      "evidence_url": "https://www.betsson.lt/en/betting-rules",
+      "evidence_checked_at": "2026-09-11",
+      "evidence_scope": "official-book-rules",
+      "note": "Football bets are accepted for regular time: 90 minutes plus injury time unless otherwise stated."
+    },
+    {
+      "rule_id": "soccer.williamhill.regulation90.v1",
+      "sport": "SOCCER",
+      "book": "William Hill",
+      "market_keys": ["h2h", "totals"],
+      "period": "regulation_time",
+      "settlement_rules": "soccer_90min_including_stoppage_no_extra_time_v1",
+      "status": "VERIFIED",
+      "evidence_url": "https://help.williamhill.com/hc/en-gb/articles/36444262255133--General-Football-Rules",
+      "evidence_checked_at": "2026-09-11",
+      "evidence_scope": "official-book-rules",
+      "note": "Match result/full time/90 minutes means normal time including stoppage time, excluding extra time and penalties unless stated."
+    },
+    {
+      "rule_id": "soccer.marathonbet.regulation90.v1",
+      "sport": "SOCCER",
+      "book": "Marathon Bet",
+      "market_keys": ["h2h", "totals"],
+      "period": "regulation_time",
+      "settlement_rules": "soccer_90min_including_stoppage_no_extra_time_v1",
+      "status": "VERIFIED",
+      "evidence_url": "https://www.marathonbet.com/cdn/help/terms_and_conditions.pdf",
+      "evidence_checked_at": "2026-09-11",
+      "evidence_scope": "official-book-terms",
+      "note": "Football markets are based on full time, normally 90 minutes, unless specifically detailed otherwise; extra time and penalties are separate unless specified."
+    },
+    {
+      "rule_id": "tennis.pinnacle.match-moneyline.one-set.v1",
+      "sport": "TENNIS",
+      "book": "Pinnacle",
+      "market_keys": ["h2h"],
+      "period": "full_match",
+      "settlement_rules": "tennis_match_moneyline_one_full_set_required_retirement_winner_advances_v1",
+      "status": "VERIFIED",
+      "evidence_url": "https://support.pinnacle.se/hc/en-us/articles/46732813299345-How-does-Pinnacle-grade-tennis-matches-in-the-event-of-retirement-or-disqualification",
+      "evidence_checked_at": "2026-09-11",
+      "evidence_scope": "official-book-support",
+      "note": "Match moneyline stands after at least one full set; before one full set it is void. Official winner is the player declared victor."
+    },
+    {
+      "rule_id": "tennis.betsson.match-moneyline.full-match.v1",
+      "sport": "TENNIS",
+      "book": "Betsson",
+      "market_keys": ["h2h"],
+      "period": "full_match",
+      "settlement_rules": "tennis_match_moneyline_full_match_completion_required_v1",
+      "status": "VERIFIED",
+      "evidence_url": "https://www.betsson.lt/en/betting-rules",
+      "evidence_checked_at": "2026-09-11",
+      "evidence_scope": "official-book-rules",
+      "note": "If a match is not fully completed due to early retirement, match-winner bets are voided and refunded."
+    },
+    {
+      "rule_id": "tennis.williamhill.match-moneyline.full-match.v1",
+      "sport": "TENNIS",
+      "book": "William Hill",
+      "market_keys": ["h2h"],
+      "period": "full_match",
+      "settlement_rules": "tennis_match_moneyline_full_match_completion_required_v1",
+      "status": "VERIFIED",
+      "evidence_url": "https://help.williamhill.com/hc/en-gb/articles/28998213514397--Tennis",
+      "evidence_checked_at": "2026-09-11",
+      "evidence_scope": "official-book-rules",
+      "note": "Match Betting is void if a player retires or is disqualified because the match did not play for the full duration."
+    },
+    {
+      "rule_id": "tennis.marathonbet.match-moneyline.one-set.v1",
+      "sport": "TENNIS",
+      "book": "Marathon Bet",
+      "market_keys": ["h2h"],
+      "period": "full_match",
+      "settlement_rules": "tennis_match_moneyline_one_full_set_required_retirement_winner_advances_v1",
+      "status": "VERIFIED",
+      "evidence_url": "https://www.marathonbet.com/cdn/help/terms_and_conditions.pdf",
+      "evidence_checked_at": "2026-09-11",
+      "evidence_scope": "official-book-terms",
+      "note": "Match result stands after one set is completed; otherwise void. Player progressing or awarded victory after the first set is deemed winner."
+    }
+  ]
+}
