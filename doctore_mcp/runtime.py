@@ -57,8 +57,18 @@ def minutes_since(value: str) -> float:
 
 
 def content_sha256(value: Any) -> str:
+    """Hash a structured value after deterministic JSON canonicalization."""
     payload = json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def file_sha256(path: Path) -> str:
+    """Return the conventional SHA-256 digest of the file's raw bytes."""
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
 
 
 def resolve_artifact_path(raw_path: str) -> Path:
