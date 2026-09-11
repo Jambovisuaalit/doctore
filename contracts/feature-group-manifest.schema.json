@@ -1,0 +1,71 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://doctore.local/schemas/feature-group-manifest.schema.json",
+  "title": "Doctore feature group manifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "dataset_id", "feature_schema_version", "created_at", "groups"],
+  "properties": {
+    "schema_version": {"const": "doctore.feature-groups.v1"},
+    "dataset_id": {"type": "string", "minLength": 1},
+    "feature_schema_version": {"type": "string", "minLength": 1},
+    "created_at": {"type": "string", "format": "date-time"},
+    "groups": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "name",
+          "status",
+          "columns",
+          "allowed_availability_modes",
+          "source_policy",
+          "reason_codes"
+        ],
+        "properties": {
+          "name": {"enum": ["baseline", "starter", "bullpen", "park", "weather"]},
+          "status": {
+            "enum": [
+              "VERIFIED_BASELINE",
+              "VERIFIED",
+              "READY_TO_ACQUIRE",
+              "BLOCKED_PROVENANCE",
+              "BLOCKED_PERIOD"
+            ]
+          },
+          "columns": {
+            "type": "array",
+            "minItems": 1,
+            "uniqueItems": true,
+            "items": {"type": "string", "minLength": 1}
+          },
+          "allowed_availability_modes": {
+            "type": "array",
+            "minItems": 1,
+            "uniqueItems": true,
+            "items": {
+              "enum": [
+                "PRIOR_EVENT_FINAL",
+                "PREGAME_SNAPSHOT",
+                "FORECAST_RUN",
+                "STATIC_KNOWN_BEFORE_CUTOFF"
+              ]
+            }
+          },
+          "source_policy": {"type": "string", "minLength": 1},
+          "reason_codes": {
+            "type": "array",
+            "uniqueItems": true,
+            "items": {"type": "string", "minLength": 1}
+          },
+          "evidence": {
+            "type": "array",
+            "items": {"type": "string", "minLength": 1}
+          }
+        }
+      }
+    }
+  }
+}
