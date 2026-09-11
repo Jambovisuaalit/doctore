@@ -29,16 +29,16 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Acquire season feature sources
+      - name: Acquire season feature sources with v3 schedule resolver
         shell: bash
         run: |
           set -euo pipefail
-          python scripts/acquire_mlb_v2_sources.py \
+          python scripts/acquire_mlb_v2_sources_v3.py \
             --season ${{ matrix.season }} \
             --workers 6 \
             --output-dir results/mlb-v2-source-${{ matrix.season }}
 
-      - name: Verify artifact hashes and completeness invariants
+      - name: Verify artifact hashes and accounting invariants
         shell: bash
         run: |
           set -euo pipefail
@@ -55,6 +55,7 @@ jobs:
           expected = (root / 'manifest.sha256').read_text().strip()
           assert sha256(manifest_bytes).hexdigest() == expected
           assert manifest['schema_version'] == 'doctore.mlb-feature-source-manifest.v2'
+          assert manifest['season'] == int(season)
 
           records_path = root / manifest['records_file']
           records_bytes = records_path.read_bytes()
@@ -70,16 +71,22 @@ jobs:
           assert reject_payload['schema_version'] == 'doctore.mlb-feature-source-rejects.v2'
           rejects = reject_payload['rejects']
 
-          # Unique strict-final gamePks partition into schedule-domain/conflict exclusions
-          # plus candidates that proceed to optional hydration/source acquisition.
+          # Strict-F accounting remains disjoint from explicit FR completed-early exclusions.
           assert manifest['strict_final_unique_game_pks'] == (
               manifest['schedule_candidates']
               + manifest['known_domain_exclusions']
               + manifest['strict_final_conflicts']
           )
-          assert manifest['eligible_schedule_games'] == manifest['schedule_candidates']
+          assert manifest['resolved_schedule_game_pks'] == (
+              manifest['strict_final_unique_game_pks']
+              + manifest['completed_early_domain_exclusions']
+          )
+          assert manifest['completed_early_domain_exclusions'] == manifest['reason_counts'].get('COMPLETED_EARLY_DOMAIN', 0)
+          assert manifest['unresolved_no_strict_played_final'] == manifest['reason_counts'].get('NO_STRICT_PLAYED_FINAL_ROW', 0)
+          assert manifest['resolved_schedule_game_pks'] <= manifest['unique_schedule_game_pks']
+          assert manifest['resolved_schedule_game_pks'] + manifest['unresolved_no_strict_played_final'] <= manifest['unique_schedule_game_pks']
 
-          # Every candidate has exactly one terminal outcome.
+          # Every strict-final candidate has exactly one terminal outcome.
           assert manifest['schedule_candidates'] == (
               manifest['normalized_source_records']
               + manifest['timestamp_or_core_reject_count']
@@ -92,10 +99,7 @@ jobs:
               + manifest['hydrated_domain_exclusions']
           )
 
-          # Reschedule/postponed rows are metadata, never fake field-missing rejects.
-          assert manifest['duplicate_schedule_rows'] >= manifest['reschedule_or_nonfinal_metadata_rows']
           assert 'SCHEDULE_FIELDS_MISSING' not in manifest['reason_counts']
-
           assert manifest['park_pass_records'] == manifest['normalized_source_records']
           assert manifest['bullpen_pass_records'] + manifest['bullpen_blocked_records'] == manifest['normalized_source_records']
           assert sum(1 for row in records if row['park_status'] == 'PASS') == manifest['park_pass_records']
@@ -112,7 +116,6 @@ jobs:
               assert required_source_context.issubset(row), row
               assert all(row.get(key) is not None for key in required_source_context - {'detail'}), row
 
-          assert manifest['acquisition_policy'] == 'strict_final_gamepk_dedupe_live_hydration_fail_closed_v2'
           print(json.dumps(manifest, indent=2, sort_keys=True))
           PY
         env:
