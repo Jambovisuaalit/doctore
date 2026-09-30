@@ -12,6 +12,7 @@ import math
 from jsonschema import Draft202012Validator, FormatChecker
 from market_probability import calculate_market_probabilities
 from mlb_context import evaluate_mlb_context
+from tennis_context import evaluate_tennis_context
 
 ROOT = Path(__file__).resolve().parents[1]
 FORMULA_VERSION = "doctore.bet-decision-core.v1"
@@ -297,6 +298,21 @@ def evaluate_bet_decision(
     output["model"]["probability_used_for_economics"] = _round(probability)
     output["model"]["sizing_probability"] = _round(sizing_probability)
 
+    odds = market_snapshot["decimal_odds"]
+    break_even = 1 / odds
+    ev = probability * odds - 1
+    edge_market = probability - fair
+    full_kelly = max(0, (sizing_probability * odds - 1) / (odds - 1))
+    output["economics"].update({
+        "break_even_probability": _round(break_even),
+        "ev": _round(ev),
+        "edge_vs_break_even_pp": _round(probability - break_even),
+        "edge_vs_market_pp": _round(edge_market),
+        "break_even_odds": _round(1 / probability),
+        "minimum_qualifying_odds": _round((1 + risk_policy["minimum_ev"]) / probability),
+        "full_kelly": _round(full_kelly),
+    })
+
     if market_snapshot["sport"] == "MLB":
         context = (
             {"sport": "MLB", "status": "BLOCKED",
@@ -312,21 +328,24 @@ def evaluate_bet_decision(
             "reason_codes": context["reason_codes"],
         }
         output["diagnostics"].extend(context.get("diagnostics", []))
+    elif market_snapshot["sport"] == "TENNIS":
+        context = (
+            {"status": "BLOCKED", "reason_codes": ["TENNIS_CONTEXT_MISSING"],
+             "diagnostics": []}
+            if sport_context is None
+            else evaluate_tennis_context(
+                sport_context,
+                market_snapshot=market_snapshot,
+                evaluated_at=evaluated_at,
+                max_age_seconds=freshness.get("tennis_context", freshness["mlb_context"]),
+            )
+        )
+        output["context"] = {
+            "sport": "TENNIS", "status": context["status"],
+            "reason_codes": context["reason_codes"],
+        }
+        output["diagnostics"].extend(context.get("diagnostics", []))
 
-    odds = market_snapshot["decimal_odds"]
-    break_even = 1 / odds
-    ev = probability * odds - 1
-    edge_market = probability - fair
-    full_kelly = max(0, (sizing_probability * odds - 1) / (odds - 1))
-    output["economics"].update({
-        "break_even_probability": _round(break_even),
-        "ev": _round(ev),
-        "edge_vs_break_even_pp": _round(probability - break_even),
-        "edge_vs_market_pp": _round(edge_market),
-        "break_even_odds": _round(1 / probability),
-        "minimum_qualifying_odds": _round((1 + risk_policy["minimum_ev"]) / probability),
-        "full_kelly": _round(full_kelly),
-    })
     failed = []
     if ev < risk_policy["minimum_ev"]:
         failed += ["EV_BELOW_MINIMUM", "PRICE_BELOW_MINIMUM"]

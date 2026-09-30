@@ -1,0 +1,66 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://doctore.local/schemas/tennis-context.schema.json",
+  "title": "Doctore tennis context",
+  "description": "Timestamped ATP main-tour singles context used only to gate match-moneyline decisions.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version", "event_id", "captured_at", "scheduled_start_at",
+    "sport", "tour", "tier", "market", "discipline", "draw_stage",
+    "match_format", "event_status", "players", "court", "validation_policy"
+  ],
+  "properties": {
+    "schema_version": {"const": "doctore.tennis-context.v1"},
+    "event_id": {"type": "string", "minLength": 1},
+    "captured_at": {"type": "string", "format": "date-time"},
+    "scheduled_start_at": {"type": "string", "format": "date-time"},
+    "sport": {"enum": ["TENNIS"]},
+    "tour": {"enum": ["ATP", "WTA"]},
+    "tier": {"enum": ["main_tour", "challenger", "itf"]},
+    "market": {"enum": ["match_moneyline", "set_moneyline", "game_handicap", "total_games"]},
+    "discipline": {"enum": ["singles", "doubles"]},
+    "draw_stage": {"enum": ["main_draw", "qualifying"]},
+    "match_format": {"enum": ["best_of_3", "best_of_5"]},
+    "event_status": {"enum": ["scheduled", "in_progress", "completed", "postponed", "cancelled", "walkover"]},
+    "players": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["player_one", "player_two"],
+      "properties": {
+        "player_one": {"$ref": "#/$defs/player"},
+        "player_two": {"$ref": "#/$defs/player"}
+      }
+    },
+    "court": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["surface", "surface_status", "environment", "environment_status"],
+      "properties": {
+        "surface": {"enum": ["hard", "clay", "grass", "carpet"]},
+        "surface_status": {"enum": ["confirmed", "unknown", "changed"]},
+        "environment": {"enum": ["indoor", "outdoor"]},
+        "environment_status": {"enum": ["confirmed", "unknown", "changed"]}
+      }
+    },
+    "validation_policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["retirements"],
+      "properties": {
+        "retirements": {"enum": ["excluded_from_initial_validation", "included"]}
+      }
+    }
+  },
+  "$defs": {
+    "player": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["player_id", "name"],
+      "properties": {
+        "player_id": {"type": "string", "minLength": 1},
+        "name": {"type": "string", "minLength": 1}
+      }
+    }
+  }
+}
