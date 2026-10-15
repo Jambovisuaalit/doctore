@@ -114,6 +114,55 @@ class MlbV2ScheduleResolutionV4Tests(unittest.TestCase):
             )
         self.assertEqual('COMPLETED_EARLY_DOMAIN', ctx.exception.code)
 
+    def test_authoritative_cancelled_statuses_are_unplayed_domain_exclusions(self):
+        cases = [
+            ('CR', 'Cancelled: Rain'),
+            ('CA', 'Cancelled: Tragedy'),
+            ('CO', 'Cancelled'),
+            ('CI', 'Cancelled: Inclement Weather'),
+            ('C9', 'Cancelled: COVID-19'),
+        ]
+        for status, detailed in cases:
+            with self.subTest(status=status, detailed=detailed):
+                row = self.row(status='DI', detailed='Postponed')
+                games, _, _ = normalize_schedule_games_v4(self.payload(row), 2014)
+                with self.assertRaises(ScheduleResolutionError) as ctx:
+                    hydrate_schedule_candidate_v4(
+                        games[0],
+                        self.live(status=status, detailed=detailed),
+                    )
+                self.assertEqual('CANCELLED_UNPLAYED_DOMAIN', ctx.exception.code)
+
+    def test_authoritative_final_tied_is_domain_exclusion(self):
+        row = self.row(status='DI', detailed='Postponed')
+        games, _, _ = normalize_schedule_games_v4(self.payload(row), 2014)
+        with self.assertRaises(ScheduleResolutionError) as ctx:
+            hydrate_schedule_candidate_v4(
+                games[0],
+                self.live(status='FT', detailed='Final: Tied'),
+            )
+        self.assertEqual('TIED_FINAL_DOMAIN', ctx.exception.code)
+
+    def test_authoritative_fo_completed_early_is_domain_exclusion(self):
+        row = self.row(status='DI', detailed='Postponed')
+        games, _, _ = normalize_schedule_games_v4(self.payload(row), 2014)
+        with self.assertRaises(ScheduleResolutionError) as ctx:
+            hydrate_schedule_candidate_v4(
+                games[0],
+                self.live(status='FO', detailed='Completed Early'),
+            )
+        self.assertEqual('COMPLETED_EARLY_DOMAIN', ctx.exception.code)
+
+    def test_cancel_code_without_cancelled_detail_stays_blocked(self):
+        row = self.row(status='DI', detailed='Postponed')
+        games, _, _ = normalize_schedule_games_v4(self.payload(row), 2014)
+        with self.assertRaises(ScheduleResolutionError) as ctx:
+            hydrate_schedule_candidate_v4(
+                games[0],
+                self.live(status='CI', detailed='Final'),
+            )
+        self.assertEqual('LIVE_NOT_FINAL', ctx.exception.code)
+
     def test_other_nonfinal_authoritative_status_stays_blocked(self):
         row = self.row(status='DI', detailed='Postponed')
         games, _, _ = normalize_schedule_games_v4(self.payload(row), 2014)
