@@ -1,0 +1,116 @@
+name: MLB v4 source rerun from main
+
+on:
+  push:
+    branches: ['research/mlb-v4-source-rerun-main-*']
+
+permissions:
+  contents: read
+
+jobs:
+  acquire:
+    strategy:
+      fail-fast: false
+      max-parallel: 3
+      matrix:
+        season: [2012, 2013, 2014, 2015, 2016, 2017, 2018, 2019, 2020, 2021]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - name: Checkout exact merged main SHA
+        uses: actions/checkout@v4
+        with:
+          ref: 4c8d324869981873dea1a6b66b7043ef788f47c4
+          fetch-depth: 1
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Acquire season with authoritative v4 resolver
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/acquire_mlb_v2_sources_v4.py \
+            --season ${{ matrix.season }} \
+            --workers 6 \
+            --output-dir results/mlb-v4-source-${{ matrix.season }}
+
+      - name: Audit immutable evidence and hard gates
+        shell: bash
+        env:
+          SEASON: ${{ matrix.season }}
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from hashlib import sha256
+          import json, os
+          from pathlib import Path
+
+          season=os.environ['SEASON']
+          root=Path(f'results/mlb-v4-source-{season}')
+          manifest_bytes=(root/'manifest.json').read_bytes()
+          manifest=json.loads(manifest_bytes)
+          assert sha256(manifest_bytes).hexdigest()==(root/'manifest.sha256').read_text().strip()
+          assert manifest['schema_version']=='doctore.mlb-feature-source-manifest.v2'
+          assert manifest['acquisition_policy']=='authoritative_live_schedule_resolution_v4'
+
+          records_bytes=(root/manifest['records_file']).read_bytes()
+          assert sha256(records_bytes).hexdigest()==manifest['records_sha256']
+          records=[json.loads(line) for line in records_bytes.splitlines() if line.strip()]
+          assert len(records)==manifest['normalized_source_records']
+          assert len({r['game_pk'] for r in records})==len(records)
+
+          rejects_bytes=(root/'rejects.json').read_bytes()
+          assert sha256(rejects_bytes).hexdigest()==manifest['rejects_sha256']
+
+          hard={
+            'strict_final_conflicts':manifest.get('strict_final_conflicts'),
+            'unresolved_no_strict_played_final':manifest.get('unresolved_no_strict_played_final'),
+            'timestamp_or_core_reject_count':manifest.get('timestamp_or_core_reject_count'),
+            'bullpen_blocked_records':manifest.get('bullpen_blocked_records'),
+            'hydration_reject_count':manifest.get('hydration_reject_count'),
+          }
+          report={
+            'season':int(season),
+            'source_sha':'4c8d324869981873dea1a6b66b7043ef788f47c4',
+            'acquisition_policy':manifest['acquisition_policy'],
+            'hard_gates':hard,
+            'pass':all(v==0 for v in hard.values()),
+            'schedule_revision_hydration_candidates':manifest.get('schedule_revision_hydration_candidates',0),
+            'unresolved_schedule_hydration_candidates':manifest.get('unresolved_schedule_hydration_candidates',0),
+            'hydration_attempted':manifest.get('hydration_attempted',0),
+            'hydrated_candidates':manifest.get('hydrated_candidates',0),
+            'hydrated_domain_exclusions':manifest.get('hydrated_domain_exclusions',0),
+            'normalized_source_records':manifest.get('normalized_source_records',0),
+            'park_pass_records':manifest.get('park_pass_records',0),
+            'bullpen_pass_records':manifest.get('bullpen_pass_records',0),
+            'reason_counts':manifest.get('reason_counts',{}),
+          }
+          (root/'hard-gate-report.json').write_text(json.dumps(report,indent=2,sort_keys=True)+'\n')
+          print(json.dumps(report,indent=2,sort_keys=True))
+          PY
+
+      - name: Upload immutable season evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mlb-v4-main-${{ matrix.season }}-4c8d3248
+          path: results/mlb-v4-source-${{ matrix.season }}/
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Enforce hard gates
+        shell: bash
+        env:
+          SEASON: ${{ matrix.season }}
+        run: |
+          python - <<'PY'
+          import json,os
+          from pathlib import Path
+          season=os.environ['SEASON']
+          report=json.loads(Path(f'results/mlb-v4-source-{season}/hard-gate-report.json').read_text())
+          if not report['pass']:
+              raise SystemExit(f"season {season} hard gate failed: {report['hard_gates']}")
+          PY
