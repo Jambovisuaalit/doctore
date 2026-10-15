@@ -182,7 +182,7 @@ def main() -> int:
     }
     raw=canonical_bytes(manifest)
     (out/"manifest.json").write_bytes(raw)
-    (out/"manifest.sha256").write_text(sha256_bytes(raw)+"\\n")
+    write_sha256_sidecar(out/"manifest.sha256", sha256_bytes(raw))
     print(json.dumps(manifest,indent=2,sort_keys=True))
     return 0 if not rejects and len(records)==len(classified) else 1
 
