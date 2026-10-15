@@ -28,6 +28,13 @@ from mlb_v2_source_acquisition import (
 )
 
 USER_AGENT = "Doctore-Sports/1.0 mlb-v2-source-acquisition"
+ACQUISITION_POLICY = "strict_final_gamepk_dedupe_live_hydration_fail_closed_v2"
+HYDRATED_DOMAIN_EXCLUSION_CODES = frozenset({
+    "NON_NINE_INNING_DOMAIN",
+    "COMPLETED_EARLY_DOMAIN",
+    "CANCELLED_UNPLAYED_DOMAIN",
+    "TIED_FINAL_DOMAIN",
+})
 
 
 def parse_args() -> argparse.Namespace:
@@ -120,7 +127,7 @@ def acquire_one(candidate: dict) -> dict:
                 "reject": reject_context(game, stage="hydration", reason=exc.code, detail=exc.detail),
                 "hydration_attempted": True,
                 "hydrated": False,
-                "hydrated_domain_exclusion": exc.code in {"NON_NINE_INNING_DOMAIN", "COMPLETED_EARLY_DOMAIN"},
+                "hydrated_domain_exclusion": exc.code in HYDRATED_DOMAIN_EXCLUSION_CODES,
             }
 
     timestamps_url = f"https://statsapi.mlb.com/api/v1.1/game/{game_pk}/feed/live/timestamps"
@@ -239,7 +246,7 @@ def main() -> int:
     hydration_reject_count = sum(
         1
         for item in runtime_rejects
-        if item.get("stage") == "hydration" and item.get("reason") != "NON_NINE_INNING_DOMAIN"
+        if item.get("stage") == "hydration" and item.get("reason") not in HYDRATED_DOMAIN_EXCLUSION_CODES
     )
     park_pass_records = sum(1 for item in records if item.get("park_status") == "PASS")
     bullpen_pass_records = sum(1 for item in records if item.get("bullpen_status") == "PASS")
@@ -280,7 +287,7 @@ def main() -> int:
         "records_file": records_path.name,
         "records_sha256": sha256_bytes(jsonl),
         "rejects_sha256": sha256_bytes(rejects_bytes),
-        "acquisition_policy": "strict_final_gamepk_dedupe_live_hydration_fail_closed_v2",
+        "acquisition_policy": ACQUISITION_POLICY,
         "workers": args.workers,
     }
     manifest_bytes = canonical_bytes(manifest)
