@@ -17,6 +17,7 @@ from mlb_v2_schedule_resolution_v4 import (
 
 
 if __name__ == '__main__':
+    base.ACQUISITION_POLICY = 'authoritative_live_schedule_resolution_v4'
     base.normalize_schedule_games = normalize_schedule_games_v4
     base.hydrate_schedule_candidate = hydrate_schedule_candidate_v4
     raise SystemExit(base.main())
