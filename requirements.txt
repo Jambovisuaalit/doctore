@@ -4,3 +4,6 @@ xgboost>=2.1,<4
 mcp[cli]>=1.2.0,<2
 pydantic>=2.0,<3
 jsonschema[format]>=4.23,<5
+
+# Skill-validation tests and bundled validator
+PyYAML>=6,<7

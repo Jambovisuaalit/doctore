@@ -296,7 +296,7 @@ class SlateOrchestrator:
                     )
                     item.approval = approval.model_dump(mode="json")
                     item.log_result = log_output.model_dump(mode="json")
-                    item.status = "LOGGED" if item.log_result.get("logged") else "LOG_REJECTED"
+                    item.status = "APPROVED_AWAITING_PLACEMENT" if item.log_result.get("logged") else "LOG_REJECTED"
                     if not item.log_result.get("logged"):
                         item.reason_codes = [
                             *reason_codes,

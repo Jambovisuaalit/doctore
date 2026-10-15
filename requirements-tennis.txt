@@ -1,0 +1,2 @@
+# Optional reviewed source. No package download occurs during normal MCP startup.
+sports-skills @ git+https://github.com/machina-sports/sports-skills.git@39092bbb6f146cc9d5631dabcf53f57f601fde6c

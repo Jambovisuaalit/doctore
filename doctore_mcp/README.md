@@ -1,6 +1,6 @@
 # doctore_mcp
 
-Personal stdio MCP server for the canonical Doctore betting research pipeline. It never places bets automatically. Logging requires a deterministic `BET` decision and explicit human approval or stake reduction.
+Personal stdio MCP server for the canonical Doctore betting research pipeline. It never places bets automatically. Approval recording requires a deterministic `BET` decision and explicit human approval or stake reduction. Approval never implies actual placement.
 
 ## Architecture
 
@@ -56,9 +56,13 @@ python doctore_mcp/server.py
 | `doctore_load_model_prediction` | read | Restricted artifact path → canonical model output + schema validation |
 | `doctore_calculate_edge_and_stake` | read | Canonical no-vig, EV, edge, Kelly and portfolio caps |
 | `doctore_evaluate_bet` | read | Full `BET/WATCH/PASS/BLOCKED` decision and zero-safe stake |
-| `doctore_log_bet` | write | Recomputes decision, checks hashes, prevents increase and duplicates |
+| `doctore_log_bet` | write | Records approval awaiting placement; no actual exposure |
+| `doctore_confirm_placement` | write | Explicit external execution fact: actual stake, odds, time and receipt |
 | `doctore_settle_bet` | write | Exact-domain close, CLV, result and P/L |
 | `doctore_portfolio_status` | read | Exposure, result counts, P/L and CLV summaries |
+| `doctore_run_context_gate` | read | Sport context without probability changes |
+| `doctore_run_slate` | mixed | Existing slate orchestration; explicit approvals required for logging |
+| `doctore_tennis_data` | read/network | Optional explicit ATP/WTA source adapter; no probabilities |
 
 All outputs are structured objects, not JSON-encoded strings.
 
@@ -100,7 +104,7 @@ A difference not explicitly classified in the compatibility document is treated 
 
 `doctore_log_bet` requires the original evaluation inputs, byte-equivalent canonical decision, `decision == BET`, explicit `APPROVE` or `REDUCE`, an approved stake no larger than the recommendation, and an unused `decision_id`.
 
-`doctore_settle_bet` validates exact event/market/domain/line/selection/book identity and event timing. It records closing odds, closing no-vig probability, price CLV, probability CLV, result, realized P/L, content hash and complete closing snapshot.
+`doctore_settle_bet` validates exact event/market/domain/line/selection/book identity and event timing. It requires confirmed placement and uses actual stake and odds for P/L and CLV. Closing data may be absent with an explicit reason.
 
 ## Verification
 
@@ -111,8 +115,78 @@ python -m unittest discover -s tests -p 'test_*.py' -v
 python doctore_mcp/scripts/run_inspector_smoke.py --repo "$PWD"
 ```
 
-The Inspector script pins `@modelcontextprotocol/inspector@0.21.2`, runs `tools/list`, and calls all eight tools through a real stdio MCP connection using isolated ledger and artifact paths.
+The Inspector script pins `@modelcontextprotocol/inspector@0.21.2`, runs `tools/list`, and calls all twelve tools through a real stdio MCP connection using isolated ledger and artifact paths.
 
 ## Blind evaluation gate
 
-No blind evaluation XML is committed until the full unit suite and Inspector **8/8** pass on the same commit. See `doctore_mcp/evaluations/README.md`. Contract-derived cases belong to golden regression tests, not to the blind evaluation.
+No blind evaluation XML is committed until the full unit suite and Inspector **12/12** pass on the same commit. See `doctore_mcp/evaluations/README.md`. Contract-derived cases belong to golden regression tests, not to the blind evaluation.
+
+## Result without closing prices
+
+Call `doctore_settle_bet` with `decision_id`, `result`, `settled_at` and
+`closing_missing_reason` when no closing snapshot is available. Omit
+`closing_market_snapshot`. CLV and closing fields return null; P/L and open
+exposure still update. Identical retries are idempotent. Changing an already
+settled result or attaching a later close is rejected, pending an explicit
+revision workflow. Legacy rows without original event timing still require a
+closing snapshot. Original-time retention is additive to the CSV header; the
+previous header remains readable.
+
+## Optional tennis data
+
+Install the reviewed source with `pip install -r requirements-tennis.txt` in the
+server environment. The optional adapter accepts only `get_scoreboard`,
+`get_rankings`, `get_calendar`, and `get_player_info` and requires `tour=atp|wta`.
+The calendar year defaults to the runtime UTC year. Player IDs must be numeric;
+this source's player endpoint does not verify tour membership. Responses retain
+the source payload and request time, never claim source/event freshness, and
+never infer bookmaker identity, odds, or a model probability from names/rankings.
+Unknown/mismatched source shapes fail closed. Normal MCP startup and CI do not
+install this dependency or perform public sports-data requests.
+
+Upstream inspected commit: `39092bbb6f146cc9d5631dabcf53f57f601fde6c`, version
+`0.37.1`, MIT; runtime dependencies declared upstream: requests and feedparser.
+HTTP athlete references published by ESPN are upgraded to HTTPS in an isolated
+provider process. Individual requests are capped at ten seconds with no retry;
+the complete operation is terminated after 45 seconds.
+The version guard is a compatibility check, not a package integrity guarantee;
+use the pinned source requirement. Live checks are separate from fixture acceptance. Run
+`python doctore_mcp/scripts/verify_tennis_live.py --tour atp --command get_scoreboard`
+for a bounded explicit source check. `DOCTORE_TENNIS_OFFLINE=1` disables all
+provider network access, including when the dependency is installed.
+
+For a smoke check without npm, run:
+
+```bash
+python doctore_mcp/scripts/run_stdio_smoke.py --repo "$PWD"
+```
+
+This uses the official Python MCP stdio client, invokes the same twelve tool
+cases in isolated state and rejects protocol-level tool errors. Tennis network
+access is explicitly disabled in the smoke environment.
+
+## Approval versus actual external placement
+
+1. Evaluate a decision and call `doctore_log_bet` with APPROVE or REDUCE.
+   Output `placement_status=APPROVED` means waiting for actual placement.
+2. Only after the user has placed the bet outside Doctore, call
+   `doctore_confirm_placement` with explicit `placement_confirmed=true`,
+   `decision_id`, positive finite `actual_stake`, decimal `actual_odds>1`,
+   timezone-aware `placed_at` and a nonblank `bookmaker_reference`.
+3. Confirmed placement creates actual exposure. Settlement requires this state
+   and computes P/L/CLV from actual stake and odds. Approval values are retained.
+
+Approval alone contributes only to `pending_approval_count` and
+`approved_unplaced_amount`, never actual open exposure. Actual policy breaches
+(e.g. excess stake, worse odds or expired approval price) are recorded as
+warnings rather than concealed; confirmation records a fact, not permission.
+No tool contacts a bookmaker or places a bet. Receipt uniqueness is checked per
+book; changed confirmation facts are rejected, identical retries are idempotent.
+A write-ahead placement JSONL retains the confirmed facts before atomic CSV
+update; replay repairs the state if that update failed. This is not a general
+multi-file transactional database or editable settlement history.
+
+Historical CSV rows become `LEGACY_UNCONFIRMED`, never silently PLACED. Open
+legacy stakes remain conservatively included in exposure and are counted
+separately. Unsettled legacy records can be explicitly confirmed; already settled
+legacy history requires a dedicated migration/revision before confirmation.

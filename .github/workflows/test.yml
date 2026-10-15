@@ -61,8 +61,9 @@ jobs:
           cd "$DOCTORE_SOURCE"
           python3 -m unittest discover -s tests -p 'test_*.py' -v
 
-      - name: Run MCP Inspector 10-of-10 smoke suite
+      - name: Run MCP Inspector 12-of-12 smoke suite
         run: |
+          set -euo pipefail
           cd "$DOCTORE_SOURCE"
           python3 doctore_mcp/scripts/run_inspector_smoke.py --repo "$DOCTORE_SOURCE" | tee inspector.log
-          grep -F "Inspector smoke suite passed: 10/10 expected tools" inspector.log
+          grep -F "Inspector smoke suite passed: 12/12 expected tools" inspector.log

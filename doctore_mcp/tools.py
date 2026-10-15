@@ -1,6 +1,8 @@
 """FastMCP tool registration for the Doctore personal research server."""
 from __future__ import annotations
 
+import asyncio
+
 from mcp.server.fastmcp import Context, FastMCP
 
 from .context_agents import ContextGateInput, ContextGateOutput, run_context_agent
@@ -10,10 +12,12 @@ from .decision_adapter import (
     evaluate,
     load_model_prediction,
 )
-from .ledger import log_bet, portfolio_status
+from .ledger import confirm_placement, log_bet, portfolio_status
 from .pinnacle_parser import parse_pinnacle_table
 from .runtime import parse_time
 from .schemas import (
+    ConfirmPlacementInput,
+    ConfirmPlacementOutput,
     DecisionInput,
     EdgeAndStakeOutput,
     EvaluateOutput,
@@ -31,6 +35,7 @@ from .schemas import (
     SettleBetOutput,
 )
 from .settlement import settle_bet
+from .tennis_data import TennisDataInput, TennisDataOutput, fetch_tennis_data
 
 mcp = FastMCP("doctore_mcp")
 
@@ -96,9 +101,9 @@ async def doctore_run_context_gate(params: ContextGateInput) -> ContextGateOutpu
     return run_context_agent(params)
 
 
-@mcp.tool(name="doctore_log_bet", annotations={"title": "Log a human-approved canonical bet", "readOnlyHint": False, "destructiveHint": False, "idempotentHint": False, "openWorldHint": False})
+@mcp.tool(name="doctore_log_bet", annotations={"title": "Record approval awaiting actual placement", "readOnlyHint": False, "destructiveHint": False, "idempotentHint": False, "openWorldHint": False})
 async def doctore_log_bet(params: LogBetInput) -> LogBetOutput:
-    """Log only a canonical BET decision; approval may reduce but never increase stake."""
+    """Record approval only; confirm actual external placement with doctore_confirm_placement."""
     return log_bet(params)
 
 
@@ -112,3 +117,14 @@ async def doctore_settle_bet(params: SettleBetInput) -> SettleBetOutput:
 async def doctore_portfolio_status(params: PortfolioStatusInput) -> PortfolioStatusOutput:
     """Calculate open exposure, realized P/L, win rate and CLV from the canonical log."""
     return portfolio_status(params)
+
+@mcp.tool(name="doctore_tennis_data", annotations={"title": "Read ATP/WTA source data", "readOnlyHint": True, "destructiveHint": False, "idempotentHint": False, "openWorldHint": True})
+async def doctore_tennis_data(params: TennisDataInput) -> TennisDataOutput:
+    """Read explicitly scoped tennis data; never return a bet probability or stake."""
+    return await asyncio.to_thread(fetch_tennis_data, params)
+
+
+@mcp.tool(name="doctore_confirm_placement", annotations={"title": "Confirm an externally placed bet", "readOnlyHint": False, "destructiveHint": False, "idempotentHint": True, "openWorldHint": False})
+async def doctore_confirm_placement(params: ConfirmPlacementInput) -> ConfirmPlacementOutput:
+    """Record user-confirmed actual odds/stake/time and receipt; never place a bet."""
+    return confirm_placement(params)

@@ -120,3 +120,37 @@ No session-v1 equivalent. Hardened-v2 requires a complete exact-domain closing m
 ## Regression status
 
 No accepted regression is expected in the committed golden set. A differential test failure that is not listed above is classified as **regression by default** and blocks merge until this document is explicitly amended with justification.
+
+## Brief implementation: independent result settlement
+
+Additive: `closing_market_snapshot` is optional when a nonempty
+`closing_missing_reason` is supplied. CLV fields and snapshot hash are nullable;
+clients requiring numeric fields must handle null (output contract expansion).
+P/L and exposure update independently of closing availability. A replay with
+changed result, close or missing reason is rejected; adding a close later is not
+a supported silent correction. New CSV rows retain `event_start_at`; the previous
+CSV header is read compatibly and expanded on the next atomic write. Legacy rows
+without the original time still require a validated closing snapshot.
+New rows reject a closing snapshot that changes the original start time.
+
+## Optional tennis source tool
+
+Additive `doctore_tennis_data` exposes four reviewed provider operations with an
+explicit tour. Provider dependency is optional and absence returns BLOCKED.
+The repo already exposed context-gate and slate tools before this change; total
+exposed tools after this addition is eleven, rather than the historical eight.
+
+## Approval/placement separation (follow-up)
+
+Intentional breaking behavior: `doctore_log_bet` records approval, no longer
+asserting a placed bet or actual exposure. Slate status is now
+`APPROVED_AWAITING_PLACEMENT`. Additive write tool `doctore_confirm_placement`
+records explicitly confirmed actual stake/odds/time/receipt and immutable facts.
+Settlement rejects unconfirmed records and uses actual execution values.
+Portfolio distinguishes pending approval and legacy uncertainty; old open
+ledger rows retain conservative exposure until explicit confirmation/migration.
+Confirmation records over-approval/worse-price facts with policy warnings; it
+never retroactively authorizes the deviation. Total tools: twelve.
+
+Tennis source calls now have bounded process lifetimes and HTTPS athlete-ref
+normalization; `DOCTORE_TENNIS_OFFLINE=1` explicitly disables source access.

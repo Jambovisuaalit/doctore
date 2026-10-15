@@ -33,6 +33,7 @@ def append_closing_record(record: dict[str, Any]) -> bool:
             len(existing) == 1
             and existing[0].get("closing_snapshot_sha256") == record["closing_snapshot_sha256"]
             and existing[0].get("result") == record["result"]
+            and existing[0].get("closing_missing_reason") == record.get("closing_missing_reason")
         )
         if same:
             return False
@@ -74,18 +75,24 @@ def settlement_domain_mismatches(row: Mapping[str, str], snapshot: Mapping[str, 
 
 def settle_bet(params: SettleBetInput) -> SettleBetOutput:
     snapshot = params.closing_market_snapshot
-    errors = schema_errors("market", snapshot)
-    if errors:
-        raise ValueError("invalid closing market snapshot: " + "; ".join(errors))
-    if parse_time(snapshot["captured_at"]) > parse_time(snapshot["event_start_at"]):
-        raise ValueError("closing snapshot was captured after event start")
-    market_probabilities = calculate_market_probabilities(snapshot)
-    closing_fair = market_probabilities["no_vig_probability"]
-    closing_odds = float(snapshot["decimal_odds"])
-    snapshot_hash = content_sha256(snapshot)
+    closing_fair = closing_odds = snapshot_hash = None
     settled_at = params.settled_at or now_iso()
-    if parse_time(settled_at) < parse_time(snapshot["event_start_at"]):
-        raise ValueError("settled_at cannot be before event start")
+    if snapshot is None:
+        if not params.closing_missing_reason or not params.closing_missing_reason.strip():
+            raise ValueError("closing_missing_reason is required without closing data")
+    else:
+        if params.closing_missing_reason is not None:
+            raise ValueError("closing_missing_reason cannot accompany closing data")
+        errors = schema_errors("market", snapshot)
+        if errors:
+            raise ValueError("invalid closing market snapshot: " + "; ".join(errors))
+        if parse_time(snapshot["captured_at"]) > parse_time(snapshot["event_start_at"]):
+            raise ValueError("closing snapshot was captured after event start")
+        if parse_time(snapshot["captured_at"]) > parse_time(settled_at):
+            raise ValueError("closing snapshot was captured after settlement")
+        closing_fair = calculate_market_probabilities(snapshot)["no_vig_probability"]
+        closing_odds = float(snapshot["decimal_odds"])
+        snapshot_hash = content_sha256(snapshot)
 
     with log_lock():
         rows = read_bet_rows()
@@ -94,29 +101,51 @@ def settle_bet(params: SettleBetInput) -> SettleBetOutput:
             raise ValueError(f"expected exactly one logged row for {params.decision_id}; found {len(indexes)}")
         index = indexes[0]
         row = rows[index]
-        mismatches = settlement_domain_mismatches(row, snapshot)
-        if mismatches:
-            raise ValueError("closing snapshot domain mismatch: " + ", ".join(mismatches))
+        if row["placement_status"] != "PLACED":
+            raise ValueError("actual placement must be confirmed before settlement")
+        # New records bind timing to the original market, not caller-supplied closing data.
+        event_start = row.get("event_start_at")
+        if snapshot is not None:
+            mismatches = settlement_domain_mismatches(row, snapshot)
+            if event_start and parse_time(event_start) != parse_time(snapshot["event_start_at"]):
+                mismatches.append("event_start_at")
+            if mismatches:
+                raise ValueError("closing snapshot domain mismatch: " + ", ".join(mismatches))
+            event_start = event_start or snapshot["event_start_at"]
+        if snapshot is not None and parse_time(snapshot["captured_at"]) < parse_time(row["placed_at"]):
+            raise ValueError("closing snapshot cannot precede actual placement")
+        if not event_start:
+            raise ValueError("legacy bet lacks event_start_at; provide exact-domain closing data")
+        if parse_time(settled_at) < parse_time(row["placed_at"]):
+            raise ValueError("settled_at cannot be before actual placement")
+        if parse_time(settled_at) < parse_time(event_start):
+            raise ValueError("settled_at cannot be before event start")
 
         if row.get("result"):
-            same = row["result"] == params.result.value and row["closing_snapshot_sha256"] == snapshot_hash
+            same = (
+                row["result"] == params.result.value
+                and (row.get("closing_snapshot_sha256") or None) == snapshot_hash
+                and (row.get("closing_missing_reason") or None) == params.closing_missing_reason
+            )
             if not same:
                 raise ValueError("bet is already settled with different closing data")
+            optional_number = lambda key: float(row[key]) if row.get(key) else None
             return SettleBetOutput(
                 settled=True, idempotent_replay=True, decision_id=params.decision_id,
-                closing_odds=float(row["closing_odds"]),
-                closing_no_vig_probability=float(row["closing_no_vig_probability"]),
-                price_clv_pct=float(row["price_clv_pct"]),
-                clv_probability_points=float(row["clv_probability_points"]),
+                closing_odds=optional_number("closing_odds"),
+                closing_no_vig_probability=optional_number("closing_no_vig_probability"),
+                price_clv_pct=optional_number("price_clv_pct"),
+                clv_probability_points=optional_number("clv_probability_points"),
                 profit_loss=float(row["profit_loss"]), closing_snapshot_sha256=snapshot_hash,
+                closing_missing_reason=params.closing_missing_reason,
                 closing_snapshot_log_path=str(CLOSING_SNAPSHOT_PATH),
             )
 
         odds_taken = float(row["odds_taken"])
         no_vig_at_bet = float(row["market_no_vig_at_bet"])
-        approved_stake = float(row["approved_stake"])
-        price_clv = odds_taken / closing_odds - 1
-        probability_clv = closing_fair - no_vig_at_bet
+        approved_stake = float(row["actual_stake"])
+        price_clv = odds_taken / closing_odds - 1 if closing_odds is not None else None
+        probability_clv = closing_fair - no_vig_at_bet if closing_fair is not None else None
         pnl = profit_loss(params.result, approved_stake, odds_taken)
         closing_record = {
             "schema_version": "doctore.closing-snapshot.v1", "decision_id": params.decision_id,
@@ -124,6 +153,7 @@ def settle_bet(params: SettleBetInput) -> SettleBetOutput:
             "closing_snapshot_sha256": snapshot_hash,
             "closing_no_vig_probability": closing_fair, "price_clv_pct": price_clv,
             "clv_probability_points": probability_clv, "market_snapshot": snapshot,
+            "closing_missing_reason": params.closing_missing_reason,
         }
         appended = append_closing_record(closing_record)
         row.update({
@@ -131,14 +161,17 @@ def settle_bet(params: SettleBetInput) -> SettleBetOutput:
             "price_clv_pct": price_clv, "clv_probability_points": probability_clv,
             "result": params.result.value, "profit_loss": pnl,
             "closing_snapshot_sha256": snapshot_hash, "settled_at": settled_at,
+            "event_start_at": event_start, "closing_missing_reason": params.closing_missing_reason,
         })
         rows[index] = row
         write_bet_rows(rows)
 
+    optional_round = lambda value: round(value, 12) if value is not None else None
     return SettleBetOutput(
         settled=True, idempotent_replay=not appended, decision_id=params.decision_id,
-        closing_odds=closing_odds, closing_no_vig_probability=round(closing_fair, 12),
-        price_clv_pct=round(price_clv, 12), clv_probability_points=round(probability_clv, 12),
+        closing_odds=closing_odds, closing_no_vig_probability=optional_round(closing_fair),
+        price_clv_pct=optional_round(price_clv), clv_probability_points=optional_round(probability_clv),
         profit_loss=round(pnl, 2), closing_snapshot_sha256=snapshot_hash,
+        closing_missing_reason=params.closing_missing_reason,
         closing_snapshot_log_path=str(CLOSING_SNAPSHOT_PATH),
     )

@@ -221,6 +221,150 @@ class McpServerTests(unittest.TestCase):
         self.assertFalse(duplicate.logged)
         self.assertIn("already logged", duplicate.reason)
 
+    def confirm_fixture_bet(self, logged, **overrides):
+        params = dict(decision_id=logged.decision_id, placement_confirmed=True,
+                      actual_stake=logged.approved_stake, actual_odds=1.90,
+                      placed_at="2026-07-24T11:01:00+03:00", bookmaker_reference="fixture-receipt-1")
+        params.update(overrides)
+        return asyncio.run(self.server.doctore_confirm_placement(self.server.ConfirmPlacementInput(**params)))
+
+    def log_fixture_bet(self, confirm=True):
+        evaluated = asyncio.run(self.server.doctore_evaluate_bet(self.evaluation))
+        logged = asyncio.run(self.server.doctore_log_bet(self.server.LogBetInput(
+            evaluation=self.evaluation, decision_output=evaluated.decision_output,
+            human_decision="APPROVE",
+        )))
+        if confirm:
+            self.confirm_fixture_bet(logged)
+        return logged
+
+    def test_approval_does_not_imply_placement_or_exposure(self):
+        logged = self.log_fixture_bet(confirm=False)
+        portfolio = asyncio.run(self.server.doctore_portfolio_status(
+            self.server.PortfolioStatusInput(bankroll=50000)))
+        self.assertEqual(1, portfolio.pending_approval_count)
+        self.assertEqual(0, portfolio.open_bet_count)
+        self.assertEqual(0, portfolio.open_exposure)
+        self.assertEqual(logged.approved_stake, portfolio.approved_unplaced_amount)
+        with self.assertRaisesRegex(ValueError, "placement must be confirmed"):
+            asyncio.run(self.server.doctore_settle_bet(self.server.SettleBetInput(
+                decision_id=logged.decision_id, result="win", closing_missing_reason="Unavailable",
+                settled_at="2026-07-24T22:00:00+03:00")))
+
+    def test_actual_values_drive_exposure_pnl_and_policy_warnings(self):
+        logged = self.log_fixture_bet(confirm=False)
+        actual = logged.approved_stake + 10
+        placed = self.confirm_fixture_bet(logged, actual_stake=actual, actual_odds=1.80,
+                                          placed_at="2026-07-24T11:10:00+03:00")
+        self.assertIn("ACTUAL_STAKE_EXCEEDS_APPROVAL", placed.policy_warnings)
+        self.assertIn("ACTUAL_ODDS_BELOW_APPROVAL", placed.policy_warnings)
+        self.assertIn("APPROVED_PRICE_EXPIRED_AT_PLACEMENT", placed.policy_warnings)
+        portfolio = asyncio.run(self.server.doctore_portfolio_status(
+            self.server.PortfolioStatusInput(bankroll=50000)))
+        self.assertEqual(actual, portfolio.open_exposure)
+        self.assertEqual(0, portfolio.pending_approval_count)
+        settled = asyncio.run(self.server.doctore_settle_bet(self.server.SettleBetInput(
+            decision_id=logged.decision_id, result="win", closing_missing_reason="Unavailable",
+            settled_at="2026-07-24T22:00:00+03:00")))
+        self.assertAlmostEqual(round(actual * 0.8, 2), settled.profit_loss)
+
+    def test_placement_replay_is_idempotent_and_changed_facts_rejected(self):
+        logged = self.log_fixture_bet(confirm=False)
+        self.assertFalse(self.confirm_fixture_bet(logged).idempotent_replay)
+        self.assertTrue(self.confirm_fixture_bet(logged).idempotent_replay)
+        with self.assertRaisesRegex(ValueError, "different facts"):
+            self.confirm_fixture_bet(logged, actual_odds=1.80)
+
+    def test_placement_requires_explicit_confirmation_and_finite_numbers(self):
+        from pydantic import ValidationError
+        for overrides in ({"placement_confirmed": False}, {"actual_stake": float("inf")},
+                          {"actual_odds": float("nan")}, {"bookmaker_reference": " "}):
+            logged = type("Logged", (), {"decision_id": "a" * 64, "approved_stake": 10})()
+            with self.subTest(overrides=overrides), self.assertRaises(ValidationError):
+                self.confirm_fixture_bet(logged, **overrides)
+
+    def test_placement_journal_recovers_after_state_write_failure(self):
+        from unittest.mock import patch
+        logged = self.log_fixture_bet(confirm=False)
+        ledger = importlib.import_module("doctore_mcp.ledger")
+        with patch.object(ledger, "write_bet_rows", side_effect=OSError("synthetic disk failure")):
+            with self.assertRaises(OSError):
+                self.confirm_fixture_bet(logged)
+        self.assertTrue(self.confirm_fixture_bet(logged).idempotent_replay)
+        journal = ledger.BET_LOG_PATH.with_suffix(".csv.placements.jsonl")
+        self.assertEqual(1, len(journal.read_text().splitlines()))
+
+    def test_receipt_cannot_be_reused_for_another_decision(self):
+        first = self.log_fixture_bet()
+        self.evaluation.model_output["model_version"] = "fixture-second-version"
+        second = self.log_fixture_bet(confirm=False)
+        self.assertNotEqual(first.decision_id, second.decision_id)
+        with self.assertRaisesRegex(ValueError, "reference is already"):
+            self.confirm_fixture_bet(second)
+
+    def test_legacy_approval_is_not_silently_confirmed(self):
+        import csv
+        ledger = importlib.import_module("doctore_mcp.ledger")
+        logged = self.log_fixture_bet(confirm=False)
+        rows = ledger.read_bet_rows()
+        with ledger.BET_LOG_PATH.open("w", newline="") as handle:
+            writer = csv.DictWriter(handle, fieldnames=ledger.PRE_PLACEMENT_LOG_FIELDS, extrasaction="ignore")
+            writer.writeheader()
+            writer.writerows(rows)
+        portfolio = asyncio.run(self.server.doctore_portfolio_status(
+            self.server.PortfolioStatusInput(bankroll=50000)))
+        self.assertEqual(1, portfolio.legacy_unconfirmed_count)
+        self.assertEqual(logged.approved_stake, portfolio.open_exposure)
+        with self.assertRaisesRegex(ValueError, "placement must be confirmed"):
+            asyncio.run(self.server.doctore_settle_bet(self.server.SettleBetInput(
+                decision_id=logged.decision_id, result="win", closing_missing_reason="Unavailable",
+                settled_at="2026-07-24T22:00:00+03:00")))
+        self.assertIn("LEGACY_APPROVAL_PROVENANCE_INCOMPLETE", self.confirm_fixture_bet(logged).policy_warnings)
+
+    def test_equivalent_placement_timezones_replay_as_same_fact(self):
+        logged = self.log_fixture_bet()
+        result = self.confirm_fixture_bet(logged, placed_at="2026-07-24T08:01:00Z")
+        self.assertTrue(result.idempotent_replay)
+
+    def test_result_without_closing_data_is_idempotent_and_has_no_clv(self):
+        logged = self.log_fixture_bet()
+        params = self.server.SettleBetInput(
+            decision_id=logged.decision_id, result="loss",
+            settled_at="2026-07-24T22:00:00+03:00",
+            closing_missing_reason="Provider did not retain the closing market",
+        )
+        result = asyncio.run(self.server.doctore_settle_bet(params))
+        self.assertIsNone(result.price_clv_pct)
+        self.assertIsNone(result.closing_odds)
+        self.assertEqual(-logged.approved_stake, result.profit_loss)
+        replay = asyncio.run(self.server.doctore_settle_bet(params))
+        self.assertTrue(replay.idempotent_replay)
+        portfolio = asyncio.run(self.server.doctore_portfolio_status(
+            self.server.PortfolioStatusInput(bankroll=50000)))
+        self.assertEqual(0, portfolio.open_bet_count)
+        self.assertEqual(1, portfolio.settled_bet_count)
+        self.assertIsNone(portfolio.avg_price_clv_pct)
+        self.assertEqual(result.profit_loss, portfolio.realized_profit_loss)
+
+    def test_missing_close_needs_reason_and_cannot_settle_before_start(self):
+        logged = self.log_fixture_bet()
+        for reason, settled_at in [(None, "2026-07-24T22:00:00+03:00"),
+                                   ("Unavailable", "2026-07-24T19:00:00+03:00")]:
+            with self.subTest(reason=reason):
+                with self.assertRaises(ValueError):
+                    asyncio.run(self.server.doctore_settle_bet(self.server.SettleBetInput(
+                        decision_id=logged.decision_id, result="win",
+                        settled_at=settled_at, closing_missing_reason=reason)))
+
+    def test_closing_cannot_change_original_start_time(self):
+        logged = self.log_fixture_bet()
+        closing = market_snapshot(odds=1.80, captured_at="2026-07-24T19:59:00+03:00")
+        closing["event_start_at"] = "2026-07-24T21:00:00+03:00"
+        with self.assertRaisesRegex(ValueError, "event_start_at"):
+            asyncio.run(self.server.doctore_settle_bet(self.server.SettleBetInput(
+                decision_id=logged.decision_id, result="win", closing_market_snapshot=closing,
+                settled_at="2026-07-24T22:00:00+03:00")))
+
     def test_settlement_closing_snapshot_and_portfolio_status(self) -> None:
         evaluated = asyncio.run(self.server.doctore_evaluate_bet(self.evaluation))
         logged = asyncio.run(self.server.doctore_log_bet(self.server.LogBetInput(
@@ -228,6 +372,7 @@ class McpServerTests(unittest.TestCase):
             decision_output=evaluated.decision_output,
             human_decision="APPROVE",
         )))
+        self.confirm_fixture_bet(logged)
         closing = market_snapshot(odds=1.80, captured_at="2026-07-24T19:59:00+03:00")
         settled = asyncio.run(self.server.doctore_settle_bet(self.server.SettleBetInput(
             decision_id=logged.decision_id,
