@@ -1,0 +1,69 @@
+name: MLB v4 bullpen history supplement
+
+on:
+  push:
+    branches: ['research/mlb-v4-bullpen-supplement-*']
+
+permissions:
+  contents: read
+
+jobs:
+  acquire:
+    strategy:
+      fail-fast: false
+      max-parallel: 3
+      matrix:
+        season: [2012, 2013, 2014, 2015, 2016, 2017, 2018, 2019, 2020, 2021]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Checkout exact merged SHA
+        uses: actions/checkout@v4
+        with:
+          ref: bd11630272e81520851a7856544c271df9b22bc2
+          fetch-depth: 1
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Acquire played domain-exclusion bullpen history
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/acquire_mlb_v4_bullpen_history.py \
+            --season ${{ matrix.season }} \
+            --output-dir results/mlb-v4-bullpen-history-${{ matrix.season }}
+      - name: Verify supplement hard gates
+        shell: bash
+        env:
+          SEASON: ${{ matrix.season }}
+        run: |
+          python - <<'PY'
+          import json, os
+          from hashlib import sha256
+          from pathlib import Path
+          season=os.environ['SEASON']
+          root=Path(f'results/mlb-v4-bullpen-history-{season}')
+          raw=(root/'manifest.json').read_bytes()
+          m=json.loads(raw)
+          assert sha256(raw).hexdigest()==(root/'manifest.sha256').read_text().strip()
+          assert m['schema_version']=='doctore.mlb-bullpen-history-manifest.v1'
+          assert m['policy']=='authoritative_played_target_exclusions_bullpen_history_v1'
+          assert m['reject_count']==0, m
+          assert m['bullpen_blocked_records']==0, m
+          records=(root/m['records_file']).read_bytes()
+          assert sha256(records).hexdigest()==m['records_sha256']
+          rows=[json.loads(line) for line in records.splitlines() if line.strip()]
+          assert len(rows)==m['supplemental_records']
+          assert all(r['bullpen_status']=='PASS' and r['bullpen_history_eligible'] is True for r in rows)
+          assert all(r['park_status']=='BLOCKED_DOMAIN' and r['target_domain_eligible'] is False for r in rows)
+          print(json.dumps(m, indent=2, sort_keys=True))
+          PY
+      - name: Upload immutable supplement
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mlb-v4-bullpen-history-${{ matrix.season }}-bd116302
+          path: results/mlb-v4-bullpen-history-${{ matrix.season }}/
+          if-no-files-found: error
+          retention-days: 30
