@@ -2,8 +2,8 @@
 """Run all exposed Doctore MCP tools through Inspector over stdio.
 
 P0 verification target:
-- all 10 currently exposed tools must be listed;
-- all 10 tools must accept a real stdio tools/call request;
+- all 11 currently exposed tools must be listed;
+- all 11 tools must accept a real stdio tools/call request;
 - context-gate and slate-orchestrator calls must also return their expected
   fail-closed semantic markers.
 """
@@ -30,6 +30,7 @@ EXPECTED_TOOLS = {
     "doctore_settle_bet",
     "doctore_portfolio_status",
     "doctore_run_slate",
+    "doctore_tennis_data",
 }
 
 
@@ -316,6 +317,10 @@ def main() -> int:
             "SLATE_MARKET_NOT_IN_PARSED_INPUT",
             "doctore_run_slate",
         )
+
+        tennis_output = _run(base, method="tools/call", tool="doctore_tennis_data",
+                             params={"command": "get_scoreboard", "tour": "atp"})
+        _require_marker(tennis_output, "TENNIS_PROVIDER_NOT_INSTALLED", "optional tennis dependency")
 
         print(
             f"Inspector smoke suite passed: {len(EXPECTED_TOOLS)}/"

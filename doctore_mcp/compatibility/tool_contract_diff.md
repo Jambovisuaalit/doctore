@@ -120,3 +120,22 @@ No session-v1 equivalent. Hardened-v2 requires a complete exact-domain closing m
 ## Regression status
 
 No accepted regression is expected in the committed golden set. A differential test failure that is not listed above is classified as **regression by default** and blocks merge until this document is explicitly amended with justification.
+
+## Brief implementation: independent result settlement
+
+Additive: `closing_market_snapshot` is optional when a nonempty
+`closing_missing_reason` is supplied. CLV fields and snapshot hash are nullable;
+clients requiring numeric fields must handle null (output contract expansion).
+P/L and exposure update independently of closing availability. A replay with
+changed result, close or missing reason is rejected; adding a close later is not
+a supported silent correction. New CSV rows retain `event_start_at`; the previous
+CSV header is read compatibly and expanded on the next atomic write. Legacy rows
+without the original time still require a validated closing snapshot.
+New rows reject a closing snapshot that changes the original start time.
+
+## Optional tennis source tool
+
+Additive `doctore_tennis_data` exposes four reviewed provider operations with an
+explicit tour. Provider dependency is optional and absence returns BLOCKED.
+The repo already exposed context-gate and slate tools before this change; total
+exposed tools after this addition is eleven, rather than the historical eight.

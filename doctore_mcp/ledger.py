@@ -28,6 +28,7 @@ BET_LOG_FIELDS = [
     "ev_at_bet", "edge_vs_market_pp", "closing_odds",
     "closing_no_vig_probability", "price_clv_pct", "clv_probability_points",
     "result", "profit_loss", "closing_snapshot_sha256", "settled_at",
+    "event_start_at", "closing_missing_reason",
 ]
 
 try:
@@ -77,7 +78,8 @@ def read_bet_rows() -> list[dict[str, str]]:
         return []
     with BET_LOG_PATH.open(newline="", encoding="utf-8") as handle:
         reader = csv.DictReader(handle)
-        if reader.fieldnames != BET_LOG_FIELDS:
+        legacy_fields = BET_LOG_FIELDS[:-2]
+        if reader.fieldnames not in (BET_LOG_FIELDS, legacy_fields):
             raise ValueError(
                 "DOCTORE_BET_LOG uses an incompatible legacy schema; migrate it before using this server"
             )
@@ -158,6 +160,7 @@ def log_bet(params: LogBetInput) -> LogBetOutput:
         "closing_odds": "", "closing_no_vig_probability": "", "price_clv_pct": "",
         "clv_probability_points": "", "result": "", "profit_loss": "",
         "closing_snapshot_sha256": "", "settled_at": "",
+        "event_start_at": market_snapshot["event_start_at"], "closing_missing_reason": "",
     }
     with log_lock():
         try:

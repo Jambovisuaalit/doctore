@@ -160,7 +160,8 @@ class SettlementResult(str, Enum):
 class SettleBetInput(BaseModel):
     model_config = ConfigDict(extra="forbid")
     decision_id: str = Field(..., pattern=r"^[a-f0-9]{64}$")
-    closing_market_snapshot: dict[str, Any]
+    closing_market_snapshot: Optional[dict[str, Any]] = None
+    closing_missing_reason: Optional[str] = Field(default=None, min_length=1)
     result: SettlementResult
     settled_at: Optional[str] = None
 
@@ -169,12 +170,13 @@ class SettleBetOutput(BaseModel):
     settled: bool
     idempotent_replay: bool
     decision_id: str
-    closing_odds: float
-    closing_no_vig_probability: float
-    price_clv_pct: float
-    clv_probability_points: float
+    closing_odds: Optional[float] = None
+    closing_no_vig_probability: Optional[float] = None
+    price_clv_pct: Optional[float] = None
+    clv_probability_points: Optional[float] = None
     profit_loss: float
-    closing_snapshot_sha256: str
+    closing_snapshot_sha256: Optional[str] = None
+    closing_missing_reason: Optional[str] = None
     closing_snapshot_log_path: str
 
 

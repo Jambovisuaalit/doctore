@@ -221,6 +221,52 @@ class McpServerTests(unittest.TestCase):
         self.assertFalse(duplicate.logged)
         self.assertIn("already logged", duplicate.reason)
 
+    def log_fixture_bet(self):
+        evaluated = asyncio.run(self.server.doctore_evaluate_bet(self.evaluation))
+        return asyncio.run(self.server.doctore_log_bet(self.server.LogBetInput(
+            evaluation=self.evaluation, decision_output=evaluated.decision_output,
+            human_decision="APPROVE",
+        )))
+
+    def test_result_without_closing_data_is_idempotent_and_has_no_clv(self):
+        logged = self.log_fixture_bet()
+        params = self.server.SettleBetInput(
+            decision_id=logged.decision_id, result="loss",
+            settled_at="2026-07-24T22:00:00+03:00",
+            closing_missing_reason="Provider did not retain the closing market",
+        )
+        result = asyncio.run(self.server.doctore_settle_bet(params))
+        self.assertIsNone(result.price_clv_pct)
+        self.assertIsNone(result.closing_odds)
+        self.assertEqual(-logged.approved_stake, result.profit_loss)
+        replay = asyncio.run(self.server.doctore_settle_bet(params))
+        self.assertTrue(replay.idempotent_replay)
+        portfolio = asyncio.run(self.server.doctore_portfolio_status(
+            self.server.PortfolioStatusInput(bankroll=50000)))
+        self.assertEqual(0, portfolio.open_bet_count)
+        self.assertEqual(1, portfolio.settled_bet_count)
+        self.assertIsNone(portfolio.avg_price_clv_pct)
+        self.assertEqual(result.profit_loss, portfolio.realized_profit_loss)
+
+    def test_missing_close_needs_reason_and_cannot_settle_before_start(self):
+        logged = self.log_fixture_bet()
+        for reason, settled_at in [(None, "2026-07-24T22:00:00+03:00"),
+                                   ("Unavailable", "2026-07-24T19:00:00+03:00")]:
+            with self.subTest(reason=reason):
+                with self.assertRaises(ValueError):
+                    asyncio.run(self.server.doctore_settle_bet(self.server.SettleBetInput(
+                        decision_id=logged.decision_id, result="win",
+                        settled_at=settled_at, closing_missing_reason=reason)))
+
+    def test_closing_cannot_change_original_start_time(self):
+        logged = self.log_fixture_bet()
+        closing = market_snapshot(odds=1.80, captured_at="2026-07-24T19:59:00+03:00")
+        closing["event_start_at"] = "2026-07-24T21:00:00+03:00"
+        with self.assertRaisesRegex(ValueError, "event_start_at"):
+            asyncio.run(self.server.doctore_settle_bet(self.server.SettleBetInput(
+                decision_id=logged.decision_id, result="win", closing_market_snapshot=closing,
+                settled_at="2026-07-24T22:00:00+03:00")))
+
     def test_settlement_closing_snapshot_and_portfolio_status(self) -> None:
         evaluated = asyncio.run(self.server.doctore_evaluate_bet(self.evaluation))
         logged = asyncio.run(self.server.doctore_log_bet(self.server.LogBetInput(

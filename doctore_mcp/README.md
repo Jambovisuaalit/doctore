@@ -59,6 +59,9 @@ python doctore_mcp/server.py
 | `doctore_log_bet` | write | Recomputes decision, checks hashes, prevents increase and duplicates |
 | `doctore_settle_bet` | write | Exact-domain close, CLV, result and P/L |
 | `doctore_portfolio_status` | read | Exposure, result counts, P/L and CLV summaries |
+| `doctore_run_context_gate` | read | Sport context without probability changes |
+| `doctore_run_slate` | mixed | Existing slate orchestration; explicit approvals required for logging |
+| `doctore_tennis_data` | read/network | Optional explicit ATP/WTA source adapter; no probabilities |
 
 All outputs are structured objects, not JSON-encoded strings.
 
@@ -111,8 +114,47 @@ python -m unittest discover -s tests -p 'test_*.py' -v
 python doctore_mcp/scripts/run_inspector_smoke.py --repo "$PWD"
 ```
 
-The Inspector script pins `@modelcontextprotocol/inspector@0.21.2`, runs `tools/list`, and calls all eight tools through a real stdio MCP connection using isolated ledger and artifact paths.
+The Inspector script pins `@modelcontextprotocol/inspector@0.21.2`, runs `tools/list`, and calls all eleven tools through a real stdio MCP connection using isolated ledger and artifact paths.
 
 ## Blind evaluation gate
 
-No blind evaluation XML is committed until the full unit suite and Inspector **8/8** pass on the same commit. See `doctore_mcp/evaluations/README.md`. Contract-derived cases belong to golden regression tests, not to the blind evaluation.
+No blind evaluation XML is committed until the full unit suite and Inspector **11/11** pass on the same commit. See `doctore_mcp/evaluations/README.md`. Contract-derived cases belong to golden regression tests, not to the blind evaluation.
+
+## Result without closing prices
+
+Call `doctore_settle_bet` with `decision_id`, `result`, `settled_at` and
+`closing_missing_reason` when no closing snapshot is available. Omit
+`closing_market_snapshot`. CLV and closing fields return null; P/L and open
+exposure still update. Identical retries are idempotent. Changing an already
+settled result or attaching a later close is rejected, pending an explicit
+revision workflow. Legacy rows without original event timing still require a
+closing snapshot. Original-time retention is additive to the CSV header; the
+previous header remains readable.
+
+## Optional tennis data
+
+Install the reviewed source with `pip install -r requirements-tennis.txt` in the
+server environment. The optional adapter accepts only `get_scoreboard`,
+`get_rankings`, `get_calendar`, and `get_player_info` and requires `tour=atp|wta`.
+The calendar year defaults to the runtime UTC year. Player IDs must be numeric;
+this source's player endpoint does not verify tour membership. Responses retain
+the source payload and request time, never claim source/event freshness, and
+never infer bookmaker identity, odds, or a model probability from names/rankings.
+Unknown/mismatched source shapes fail closed. Normal MCP startup and CI do not
+install this dependency or perform public sports-data requests.
+
+Upstream inspected commit: `39092bbb6f146cc9d5631dabcf53f57f601fde6c`, version
+`0.37.1`, MIT; runtime dependencies declared upstream: requests and feedparser.
+The version guard is a compatibility check, not a package integrity guarantee;
+use the pinned source requirement. Live ESPN retrieval is not part of the
+fixture acceptance evidence.
+
+For a smoke check without npm, run:
+
+```bash
+python doctore_mcp/scripts/run_stdio_smoke.py --repo "$PWD"
+```
+
+This uses the official Python MCP stdio client, invokes the same eleven tool
+cases in isolated state and rejects protocol-level tool errors. Optional tennis
+provider must be absent for the documented missing-dependency case.

@@ -31,6 +31,7 @@ from .schemas import (
     SettleBetOutput,
 )
 from .settlement import settle_bet
+from .tennis_data import TennisDataInput, TennisDataOutput, fetch_tennis_data
 
 mcp = FastMCP("doctore_mcp")
 
@@ -112,3 +113,8 @@ async def doctore_settle_bet(params: SettleBetInput) -> SettleBetOutput:
 async def doctore_portfolio_status(params: PortfolioStatusInput) -> PortfolioStatusOutput:
     """Calculate open exposure, realized P/L, win rate and CLV from the canonical log."""
     return portfolio_status(params)
+
+@mcp.tool(name="doctore_tennis_data", annotations={"title": "Read ATP/WTA source data", "readOnlyHint": True, "destructiveHint": False, "idempotentHint": False, "openWorldHint": True})
+async def doctore_tennis_data(params: TennisDataInput) -> TennisDataOutput:
+    """Read explicitly scoped tennis data; never return a bet probability or stake."""
+    return fetch_tennis_data(params)
