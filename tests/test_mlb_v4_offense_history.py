@@ -8,7 +8,7 @@ import unittest
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
-from mlb_v4_offense_history import OffenseHistoryError, normalize_offense_history_source, normalize_team_batting
+from mlb_v4_offense_history import OffenseHistoryError, normalize_offense_history_source, normalize_team_batting, write_sha256_sidecar
 
 
 class MlbV4OffenseHistoryTests(unittest.TestCase):
