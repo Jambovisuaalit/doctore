@@ -19,6 +19,11 @@ class OffenseAcquisitionCliTests(unittest.TestCase):
         self.assertIn("--output-dir", result.stdout)
         self.assertIn("--workers", result.stdout)
 
+    def test_manifest_sha_source_uses_real_newline(self):
+        source = (ROOT / "scripts" / "acquire_mlb_v4_offense_history.py").read_text(encoding="utf-8")
+        self.assertIn('write_text(sha256_bytes(raw)+"\\n", encoding="utf-8")', source)
+        self.assertNotIn('write_text(sha256_bytes(raw)+"\\\\n")', source)
+
 
 if __name__ == "__main__":
     unittest.main()
