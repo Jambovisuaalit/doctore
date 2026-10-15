@@ -100,6 +100,7 @@ def _revision_candidate(game_pk: int, rows: Sequence[Mapping[str, Any]], season:
     merged["needs_hydration"] = True
     merged["revision_conflict_fields"] = sorted(mutable_conflicts)
     merged["schedule_revision_resolution"] = "AUTHORITATIVE_LIVE_HYDRATION_REQUIRED"
+    merged["schedule_resolution_kind"] = "STRICT_FINAL_REVISION"
     return merged
 
 
@@ -167,10 +168,16 @@ def _unresolved_live_candidate(
         return None
     values = [_values(row) for row in eligible]
     candidate: dict[str, Any] = {'game_pk': game_pk}
-    for field in (*IMMUTABLE_FIELDS, *MUTABLE_FIELDS):
+    # No-strict-final schedule metadata is not event truth. Preserve only
+    # stable team identity when unanimous; all settlement/mutable fields
+    # must come from the authoritative live feed.
+    for field in ('away_team_id', 'home_team_id'):
         unique = _unique_present(values, field)
         candidate[field] = next(iter(unique)) if len(unique) == 1 else None
+    for field in ('official_date', 'scheduled_innings', 'away_score', 'home_score', *MUTABLE_FIELDS):
+        candidate[field] = None
     candidate.update({
+        'expected_season': season,
         'schedule_row_count': len(rows),
         'raw_schedule_row_count': len(rows),
         'strict_final_row_count': 0,
@@ -244,4 +251,11 @@ def hydrate_schedule_candidate_v4(
             'COMPLETED_EARLY_DOMAIN',
             f"gamePk={candidate.get('game_pk')} authoritative live status={code!r} detailed={detailed!r}",
         )
-    return _hydrate_schedule_candidate_base(candidate, live_payload)
+    resolved = _hydrate_schedule_candidate_base(candidate, live_payload)
+    expected_season = candidate.get('expected_season')
+    if expected_season is not None and not str(resolved.get('official_date') or '').startswith(str(expected_season)):
+        raise ScheduleResolutionError(
+            'LIVE_OFFICIAL_DATE_OUTSIDE_SEASON',
+            f"gamePk={candidate.get('game_pk')} live official_date={resolved.get('official_date')!r} expected season={expected_season}",
+        )
+    return resolved
