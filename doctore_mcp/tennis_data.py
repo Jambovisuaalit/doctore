@@ -19,15 +19,21 @@ REVIEWED_COMMIT = "39092bbb6f146cc9d5631dabcf53f57f601fde6c"
 
 class TennisDataInput(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    command: Literal["get_scoreboard", "get_rankings", "get_calendar", "get_player_info", "get_capabilities", "analyze_supplied_market"]
+    command: Literal["get_scoreboard", "get_rankings", "get_calendar", "get_player_info", "get_capabilities", "analyze_supplied_market", "import_odds", "compare_odds"]
     tour: Literal["atp", "wta"]
     year: int | None = Field(default=None, ge=1900, le=2200)
     limit: int | None = Field(default=None, ge=1, le=100)
     player_id: str | None = Field(default=None, pattern=r"^[1-9][0-9]*$")
     market_snapshot: dict[str, Any] | None = None
+    odds_import: dict[str, Any] | None = None
+    comparison_snapshots: list[dict[str, Any]] | None = None
 
     @model_validator(mode="after")
     def check_parameters(self):
+        if (self.command == "import_odds") != (self.odds_import is not None):
+            raise ValueError("odds_import is required only for import_odds")
+        if (self.command == "compare_odds") != (self.comparison_snapshots is not None):
+            raise ValueError("comparison_snapshots is required only for compare_odds")
         if (self.command == "analyze_supplied_market") != (self.market_snapshot is not None):
             raise ValueError("market_snapshot is required only for analyze_supplied_market")
         if (self.command == "get_player_info") != (self.player_id is not None):
@@ -113,7 +119,7 @@ def capabilities():
     return {
         "mode": tennis_mode(), "default_source": "sports-skills/ESPN",
         "api_key_required": False, "background_data_commands": ["get_scoreboard", "get_rankings", "get_calendar", "get_player_info"],
-        "local_commands": ["get_capabilities", "analyze_supplied_market"],
+        "local_commands": ["get_capabilities", "analyze_supplied_market", "import_odds", "compare_odds"],
         "odds_source": "user_supplied_timestamped_snapshot", "automatic_betting": False,
         "live_decisions_enabled": False, "research_recommendations_enabled": False,
         "verified_prematch_opt_in": tennis_mode() == "verified_prematch",
@@ -160,6 +166,19 @@ def fetch_tennis_data(params: TennisDataInput, *, provider=None, clock=None) -> 
     if now.tzinfo is None:
         raise ValueError("timezone-aware clock required")
     base = dict(command=params.command, tour=params.tour, requested_at=now.isoformat())
+    if params.command in ("import_odds", "compare_odds"):
+        from .tennis_odds import import_quotes, compare_quotes, OddsError
+        try:
+            data = (import_quotes(params.odds_import, params.tour, now) if params.command == "import_odds"
+                    else compare_quotes(params.comparison_snapshots, now))
+            reasons = (["TENNIS_ODDS_PARTIAL_IMPORT"] if data.get("rejected") else [])
+            if params.command == "import_odds" and not data["snapshots"]:
+                reasons = ["TENNIS_ODDS_NO_VALID_QUOTES"]
+            return TennisDataOutput(status="BLOCKED" if reasons == ["TENNIS_ODDS_NO_VALID_QUOTES"] else "OK",
+                reason_codes=reasons, data=data, source="supplied_odds_research", provider_version="not_used", **base)
+        except OddsError as exc:
+            return TennisDataOutput(status="BLOCKED", reason_codes=[str(exc)],
+                source="supplied_odds_research", provider_version="not_used", **base)
     if params.command == "get_capabilities":
         return TennisDataOutput(status="OK", reason_codes=[], data=capabilities(), source="local_configuration",
                                 provider_version="not_used", note="Local capabilities; no provider call or API key required.", **base)
