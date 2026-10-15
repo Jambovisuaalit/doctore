@@ -33,7 +33,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python scripts/acquire_mlb_v2_sources.py \
+          python scripts/acquire_mlb_v2_sources_v4.py \
             --season ${{ matrix.season }} \
             --workers 6 \
             --output-dir results/mlb-v2-source-${{ matrix.season }}
@@ -70,13 +70,18 @@ jobs:
           assert reject_payload['schema_version'] == 'doctore.mlb-feature-source-rejects.v2'
           rejects = reject_payload['rejects']
 
-          # Unique strict-final gamePks partition into schedule-domain/conflict exclusions
-          # plus candidates that proceed to optional hydration/source acquisition.
+          # V4 can add two authoritative-hydration candidate classes beyond the
+          # base strict-final partition. Remove unresolved live-check candidates
+          # before checking strict-final accounting.
+          unresolved_live = manifest.get('unresolved_schedule_hydration_candidates', 0)
+          revision_live = manifest.get('schedule_revision_hydration_candidates', 0)
+          strict_candidates = manifest['schedule_candidates'] - unresolved_live
           assert manifest['strict_final_unique_game_pks'] == (
-              manifest['schedule_candidates']
+              strict_candidates
               + manifest['known_domain_exclusions']
               + manifest['strict_final_conflicts']
           )
+          assert manifest.get('authoritative_hydration_candidates', 0) == revision_live + unresolved_live
           assert manifest['eligible_schedule_games'] == manifest['schedule_candidates']
 
           # Every candidate has exactly one terminal outcome.
@@ -93,7 +98,12 @@ jobs:
           )
 
           # Reschedule/postponed rows are metadata, never fake field-missing rejects.
-          assert manifest['duplicate_schedule_rows'] >= manifest['reschedule_or_nonfinal_metadata_rows']
+          assert manifest['raw_schedule_rows'] == (
+              manifest['rows_without_game_pk']
+              + manifest['unique_schedule_game_pks']
+              + manifest['duplicate_schedule_rows']
+          )
+          assert manifest['reschedule_or_nonfinal_metadata_rows'] >= manifest.get('completed_early_domain_exclusions', 0)
           assert 'SCHEDULE_FIELDS_MISSING' not in manifest['reason_counts']
 
           assert manifest['park_pass_records'] == manifest['normalized_source_records']
@@ -112,16 +122,43 @@ jobs:
               assert required_source_context.issubset(row), row
               assert all(row.get(key) is not None for key in required_source_context - {'detail'}), row
 
-          assert manifest['acquisition_policy'] == 'strict_final_gamepk_dedupe_live_hydration_fail_closed_v2'
+          assert manifest['acquisition_policy'] == 'authoritative_live_schedule_resolution_v4'
           print(json.dumps(manifest, indent=2, sort_keys=True))
           PY
         env:
           SEASON: ${{ matrix.season }}
 
       - name: Upload immutable season source artifact
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: mlb-v2-feature-sources-${{ matrix.season }}-${{ github.sha }}
           path: results/mlb-v2-source-${{ matrix.season }}/
           if-no-files-found: error
-          retention-days: 7
+          retention-days: 30
+
+      - name: Enforce v4 provenance completeness gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          season = os.environ['SEASON']
+          manifest = json.loads(Path(f'results/mlb-v2-source-{season}/manifest.json').read_text())
+          required_zero = [
+              'strict_final_conflicts',
+              'unresolved_no_strict_played_final',
+              'timestamp_or_core_reject_count',
+              'bullpen_blocked_records',
+              'hydration_reject_count',
+          ]
+          failures = {key: manifest.get(key) for key in required_zero if manifest.get(key) != 0}
+          if failures:
+              raise SystemExit(f'P0 provenance gate failed for {season}: {failures}')
+          print(json.dumps({key: manifest.get(key) for key in required_zero}, sort_keys=True))
+          PY
+        env:
+          SEASON: ${{ matrix.season }}
