@@ -62,6 +62,12 @@ sports:
     separate_calibration_domain: true
   TENNIS:
     enabled: true
+    mode: research # Runtime default: DOCTORE_TENNIS_MODE=research
+    background_source: sports-skills/ESPN
+    odds_source: user_supplied_timestamped_snapshot
+    live_decisions_enabled: false
+    automatic_betting: false
+    paid_provider_required: false
     require_surface_match: true
     require_format_match: true
     require_retirement_rule_match: true

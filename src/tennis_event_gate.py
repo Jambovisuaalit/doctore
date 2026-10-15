@@ -11,6 +11,8 @@ def _time(value):
 
 def validate_tennis_event(context, market, evaluated_at):
     try:
+        if isinstance(context, dict) and context.get("research_only") is True:
+            return ["TENNIS_RESEARCH_ONLY"]
         if not isinstance(context, dict) or not isinstance(context.get("tennis_event"), dict):
             return ["TENNIS_EVENT_EVIDENCE_MISSING"]
         event = context["tennis_event"]

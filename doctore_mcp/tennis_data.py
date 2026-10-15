@@ -19,14 +19,17 @@ REVIEWED_COMMIT = "39092bbb6f146cc9d5631dabcf53f57f601fde6c"
 
 class TennisDataInput(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    command: Literal["get_scoreboard", "get_rankings", "get_calendar", "get_player_info"]
+    command: Literal["get_scoreboard", "get_rankings", "get_calendar", "get_player_info", "get_capabilities", "analyze_supplied_market"]
     tour: Literal["atp", "wta"]
     year: int | None = Field(default=None, ge=1900, le=2200)
     limit: int | None = Field(default=None, ge=1, le=100)
     player_id: str | None = Field(default=None, pattern=r"^[1-9][0-9]*$")
+    market_snapshot: dict[str, Any] | None = None
 
     @model_validator(mode="after")
     def check_parameters(self):
+        if (self.command == "analyze_supplied_market") != (self.market_snapshot is not None):
+            raise ValueError("market_snapshot is required only for analyze_supplied_market")
         if (self.command == "get_player_info") != (self.player_id is not None):
             raise ValueError("player_id is required only for get_player_info")
         if self.year is not None and self.command != "get_calendar":
@@ -46,6 +49,9 @@ class TennisDataOutput(BaseModel):
     requested_at: str
     source_updated_at: None = None
     event_freshness_verified: bool = False
+    research_only: bool = True
+    recommendation_available: bool = False
+    live_decisions_enabled: bool = False
     data: dict[str, Any] | None = None
     source_message: str | None = None
     note: str = "Source may be cached; request time is not event freshness. No odds or model probability."
@@ -97,11 +103,71 @@ def _bounded_source_call(command, kwargs, timeout_seconds=45):
         process.close()
 
 
+def tennis_mode():
+    """Keyless research is the explicit default; unknown modes fail closed."""
+    mode = os.environ.get("DOCTORE_TENNIS_MODE", "research")
+    return mode if mode in ("research", "verified_prematch") else "disabled"
+
+
+def capabilities():
+    return {
+        "mode": tennis_mode(), "default_source": "sports-skills/ESPN",
+        "api_key_required": False, "background_data_commands": ["get_scoreboard", "get_rankings", "get_calendar", "get_player_info"],
+        "local_commands": ["get_capabilities", "analyze_supplied_market"],
+        "odds_source": "user_supplied_timestamped_snapshot", "automatic_betting": False,
+        "live_decisions_enabled": False, "research_recommendations_enabled": False,
+        "verified_prematch_opt_in": tennis_mode() == "verified_prematch",
+        "optional_provider": "sportradar", "optional_provider_required_for_research": False,
+        "background_dependency_required": "requirements-tennis.txt",
+        "note": "A current source read is not proof of match freshness or executable odds. Price-vector math does not model retirement/void settlement."
+    }
+
+
+def analyze_supplied_market(snapshot, now):
+    from .schemas import schema_errors
+    from .runtime import parse_time, content_sha256
+    from src.market_probability import calculate_market_probabilities
+    errors = schema_errors("market", snapshot)
+    if errors or snapshot.get("sport") != "TENNIS":
+        return None, ["TENNIS_SUPPLIED_MARKET_INVALID"]
+    age = (now - parse_time(snapshot["captured_at"])).total_seconds()
+    if age < 0 or age > 300:
+        return None, ["TENNIS_SUPPLIED_PRICE_STALE"]
+    if not snapshot["is_complete"] or snapshot["market_status"] != "open":
+        return None, ["TENNIS_SUPPLIED_MARKET_INCOMPLETE"]
+    try:
+        # Deliberately use the public generic price-vector API. This is arithmetic
+        # research only; canonical tennis retirement/void economics stays blocked.
+        import math
+        outcomes = snapshot["outcomes"]
+        if len(outcomes) != 2 or len({row["selection"] for row in outcomes}) != 2 or any(not math.isfinite(row["decimal_odds"]) for row in outcomes):
+            raise ValueError("two unique finite outcome prices required")
+        vector = {key: snapshot[key] for key in ("selection", "decimal_odds", "outcomes")}
+        baseline = calculate_market_probabilities(vector)
+    except (ValueError, TypeError, KeyError):
+        return None, ["TENNIS_SUPPLIED_MARKET_INVALID"]
+    return {"scope": "price_vector_only", "source": "user_supplied", "book": snapshot["book"],
+            "captured_at": snapshot["captured_at"], "age_seconds": age,
+            "event_id": snapshot["event_id"], "market_id": snapshot["market_id"],
+            "market_snapshot_sha256": content_sha256(snapshot),
+            "market_baseline": baseline, "event_freshness_verified": False,
+            "executable_price_verified": False, "model_probability": None, "stake": None,
+            "recommendation": None, "settlement_payoff_verified": False}, []
+
+
 def fetch_tennis_data(params: TennisDataInput, *, provider=None, clock=None) -> TennisDataOutput:
     now = (clock or (lambda: datetime.now(timezone.utc)))()
     if now.tzinfo is None:
         raise ValueError("timezone-aware clock required")
     base = dict(command=params.command, tour=params.tour, requested_at=now.isoformat())
+    if params.command == "get_capabilities":
+        return TennisDataOutput(status="OK", reason_codes=[], data=capabilities(), source="local_configuration",
+                                provider_version="not_used", note="Local capabilities; no provider call or API key required.", **base)
+    if params.command == "analyze_supplied_market":
+        data, reasons = analyze_supplied_market(params.market_snapshot, now)
+        return TennisDataOutput(status="BLOCKED" if reasons else "OK", reason_codes=reasons, data=data,
+                                source="user_supplied", provider_version="not_used",
+                                note="Timestamped supplied prices support arithmetic research only; source, execution and retirement/void payoffs are unverified.", **base)
     if provider is None:
         if os.environ.get("DOCTORE_TENNIS_OFFLINE") == "1":
             return TennisDataOutput(status="BLOCKED", reason_codes=["TENNIS_NETWORK_DISABLED"], **base)

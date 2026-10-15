@@ -40,7 +40,7 @@ class TennisVerificationTests(unittest.TestCase):
         self.db = Path(self.temp.name)/"evidence.sqlite3"
         env = patch.dict(os.environ, {"DOCTORE_TENNIS_IDENTITY_REGISTRY":str(self.registry),
             "DOCTORE_TENNIS_EVIDENCE_DB":str(self.db),"SPORTRADAR_API_KEY":"synthetic-test-key",
-            "SPORTRADAR_ACCESS_LEVEL":"trial"})
+            "SPORTRADAR_ACCESS_LEVEL":"trial", "DOCTORE_TENNIS_MODE":"verified_prematch"})
         env.start()
         self.addCleanup(env.stop)
 

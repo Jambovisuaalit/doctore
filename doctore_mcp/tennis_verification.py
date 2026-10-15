@@ -122,6 +122,9 @@ def fetch_summary(source_event_id, api_key, access_level):
 
 
 def acquire(book, book_market_id, *, allow_live_fetch=False, clock=None):
+    from .tennis_data import tennis_mode
+    if tennis_mode() != "verified_prematch":
+        raise VerificationError("TENNIS_PAID_PROVIDER_DISABLED")
     if not allow_live_fetch:
         raise VerificationError("TENNIS_EXPLICIT_FETCH_REQUIRED")
     if not os.environ.get("SPORTRADAR_API_KEY", "").strip() or os.environ.get("SPORTRADAR_ACCESS_LEVEL") not in ("trial", "production"):

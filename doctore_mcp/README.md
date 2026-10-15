@@ -231,3 +231,15 @@ Evaluation revalidates those bytes offline. Snapshot `generated_at` and event
 last-change time are distinct; no request timestamp proves source freshness.
 An existing entitled API key, explicit access level and real reviewed bookmaker
 mapping are external prerequisites. No account, subscription or model is created.
+
+## Keyless tennis default
+
+The default `DOCTORE_TENNIS_MODE=research` uses sports-skills/ESPN for background
+research and timestamped user-supplied prices for local price-vector arithmetic.
+No paid API key is required. The existing doctore_tennis_data tool now also accepts
+get_capabilities and analyze_supplied_market. These local operations need no
+network or optional source package and return no model probability, stake or bet
+recommendation. Canonical approval returns TENNIS_RESEARCH_ONLY. Sportradar
+acquisition is disabled unless the operator explicitly opts into verified_prematch;
+its missing credential is not a default-workflow error. See
+[TENNIS_EVENT_GATE.md](../docs/TENNIS_EVENT_GATE.md) for inputs and actual source-read evidence.

@@ -177,6 +177,8 @@ def main() -> int:
             f"DOCTORE_MODEL_ARTIFACT_ROOT={temp}",
             "-e",
             "DOCTORE_TENNIS_OFFLINE=1",
+            "-e",
+            "DOCTORE_TENNIS_MODE=research",
             args.python,
             str(server_path),
         ]
@@ -347,6 +349,16 @@ def main() -> int:
         tennis_output = _run(base, method="tools/call", tool="doctore_tennis_data",
                              params={"command": "get_scoreboard", "tour": "atp"})
         _require_marker(tennis_output, "TENNIS_NETWORK_DISABLED", "offline tennis gate")
+        capabilities_output = _run(base, method="tools/call", tool="doctore_tennis_data",
+                                   params={"command": "get_capabilities", "tour": "atp"})
+        _require_marker(capabilities_output, "local_configuration", "keyless local capabilities")
+        supplied_tennis = dict(market, sport="TENNIS", competition="ATP",
+                               captured_at=datetime.now(timezone.utc).isoformat())
+        research_output = _run(base, method="tools/call", tool="doctore_tennis_data",
+                               params={"command": "analyze_supplied_market", "tour": "atp",
+                                       "market_snapshot": supplied_tennis})
+        _require_marker(research_output, "price_vector_only", "local user-supplied price research")
+
 
         print(
             f"Inspector smoke suite passed: {len(EXPECTED_TOOLS)}/"
