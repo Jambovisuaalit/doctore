@@ -359,6 +359,16 @@ def main() -> int:
                                        "market_snapshot": supplied_tennis})
         _require_marker(research_output, "price_vector_only", "local user-supplied price research")
 
+        imported_output = _run(base, method="tools/call", tool="doctore_tennis_data",
+            params={"command": "import_odds", "tour": "atp", "odds_import": {
+                "source_format": "copied_table", "raw_table": "Player A\t1.91\nPlayer B\t2.05",
+                "price_format": "decimal", "book": "synthetic-book", "book_event_id": "test-event",
+                "source_url": "https://example.com/test-event", "competition": "ATP synthetic",
+                "settlement_rules": "one_completed_set",
+                "captured_at": datetime.now(timezone.utc).isoformat(),
+                "event_start_at": "2099-01-01T12:00:00Z"}})
+        _require_marker(imported_output, "user_copied_table", "local copied odds import")
+
 
         print(
             f"Inspector smoke suite passed: {len(EXPECTED_TOOLS)}/"
