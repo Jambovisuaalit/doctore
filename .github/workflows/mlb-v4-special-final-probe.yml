@@ -1,0 +1,36 @@
+name: MLB v4 special final probe
+
+on:
+  push:
+    branches: ['research/mlb-v4-special-final-probe-*']
+
+jobs:
+  probe:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: 63c5f36a9835d287947eda440326ec1d5c2bbea4
+          fetch-depth: 1
+      - shell: bash
+        run: |
+          python - <<'PY'
+          import json
+          from urllib.request import Request,urlopen
+          for pk in [449244,631131]:
+              req=Request(f'https://statsapi.mlb.com/api/v1.1/game/{pk}/feed/live',headers={'User-Agent':'Doctore-Sports/1.0 special-final-probe'})
+              with urlopen(req,timeout=90) as r: p=json.loads(r.read().decode())
+              gd=p.get('gameData') or {}; st=gd.get('status') or {}; ls=(p.get('liveData') or {}).get('linescore') or {}
+              print(json.dumps({
+                  'game_pk':pk,
+                  'statusCode':st.get('statusCode'),
+                  'detailedState':st.get('detailedState'),
+                  'reason':st.get('reason'),
+                  'scheduledInnings':ls.get('scheduledInnings'),
+                  'currentInning':ls.get('currentInning'),
+                  'currentInningOrdinal':ls.get('currentInningOrdinal'),
+                  'innings_count':len(ls.get('innings') or []),
+                  'away_runs':((ls.get('teams') or {}).get('away') or {}).get('runs'),
+                  'home_runs':((ls.get('teams') or {}).get('home') or {}).get('runs'),
+              },sort_keys=True))
+          PY
