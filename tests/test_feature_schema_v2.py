@@ -84,7 +84,11 @@ class FeatureSchemaV2Tests(unittest.TestCase):
             "source_events": [],
         }
         self.assertEqual((), validate_provenance_record(record))
-        self.assertEqual([], list(self.provenance_validator.iter_errors(record)))
+        validator = Draft202012Validator(
+            json.loads((ROOT / "contracts" / "feature-provenance-record.schema.json").read_text()),
+            format_checker=FormatChecker(),
+        )
+        self.assertEqual([], list(validator.iter_errors(record)))
 
     def test_complete_prior_window_rejects_source_before_declared_window(self) -> None:
         record = {
