@@ -190,3 +190,13 @@ Historical CSV rows become `LEGACY_UNCONFIRMED`, never silently PLACED. Open
 legacy stakes remain conservatively included in exposure and are counted
 separately. Unsettled legacy records can be explicitly confirmed; already settled
 legacy history requires a dedicated migration/revision before confirmation.
+
+## Settlement revisions and transactional authority
+
+`doctore_settle_bet` now supports explicit `revision` actions CORRECT_RESULT and
+ADD_CLOSING, with human confirmation, reviewer, source, reason, unique request ID
+and optimistic settlement hash. Settlement state and immutable audit commit in
+SQLite; CSV/JSONL are projections. See [SETTLEMENT_REVISIONS.md](../docs/SETTLEMENT_REVISIONS.md)
+for retry, migration, export and backup requirements. This supersedes the earlier
+paragraph stating that all late closing enrichment/result correction is rejected.
+Approval and placement persistence are not migrated by this change.
