@@ -1,0 +1,70 @@
+name: MLB offense history acquisition
+
+on:
+  push:
+    branches: ['research/mlb-offense-history-*']
+
+permissions:
+  contents: read
+
+jobs:
+  acquire:
+    strategy:
+      fail-fast: false
+      max-parallel: 3
+      matrix:
+        season: [2012,2013,2014,2015,2016,2017,2018,2019,2020,2021]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - name: Checkout exact merged source SHA
+        uses: actions/checkout@v4
+        with:
+          ref: 19dbbd463d2b765edc48a5576982a5b9dfcdabf4
+          fetch-depth: 1
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Acquire complete offense history
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/acquire_mlb_v4_offense_history.py \
+            --season ${{ matrix.season }} \
+            --workers 6 \
+            --output-dir results/mlb-offense-history-${{ matrix.season }}
+      - name: Verify immutable season evidence
+        shell: bash
+        env:
+          SEASON: ${{ matrix.season }}
+        run: |
+          python - <<'PY'
+          import json,os
+          from hashlib import sha256
+          from pathlib import Path
+          season=os.environ['SEASON']
+          root=Path(f'results/mlb-offense-history-{season}')
+          raw=(root/'manifest.json').read_bytes()
+          m=json.loads(raw)
+          assert sha256(raw).hexdigest()==(root/'manifest.sha256').read_text().strip()
+          assert m['schema_version']=='doctore.mlb-offense-history-manifest.v1'
+          assert m['policy']=='authoritative_complete_played_offense_history_v1'
+          assert m['reject_count']==0, m
+          records=(root/m['records_file']).read_bytes()
+          assert sha256(records).hexdigest()==m['records_sha256']
+          rows=[json.loads(line) for line in records.splitlines() if line.strip()]
+          assert len(rows)==m['normalized_records']==m['classified_played_games']
+          assert len({r['game_pk'] for r in rows})==len(rows)
+          assert all(r['offense_status']=='PASS' and r['offense_history_eligible'] is True for r in rows)
+          assert all(r['away_batting']['plate_appearances']>0 and r['home_batting']['plate_appearances']>0 for r in rows)
+          print(json.dumps(m,indent=2,sort_keys=True))
+          PY
+      - name: Upload immutable offense history
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mlb-offense-history-${{ matrix.season }}-19dbbd46
+          path: results/mlb-offense-history-${{ matrix.season }}/
+          if-no-files-found: error
+          retention-days: 30
