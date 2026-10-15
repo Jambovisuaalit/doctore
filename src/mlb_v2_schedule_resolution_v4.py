@@ -243,14 +243,40 @@ def hydrate_schedule_candidate_v4(
 ) -> dict[str, Any]:
     '''Hydrate a v4 candidate; only explicit authoritative domain exclusions bypass F status.'''
     game_data = live_payload.get('gameData') or {}
+    live_data = live_payload.get('liveData') or {}
     status = game_data.get('status') or {}
+    linescore = live_data.get('linescore') or {}
     code = str(status.get('statusCode') or status.get('codedGameState') or '').upper()
     detailed = str(status.get('detailedState') or '').strip()
-    if code == 'FR' and detailed.casefold().startswith('completed early'):
+    detailed_cf = detailed.casefold()
+
+    if detailed_cf.startswith('cancelled'):
+        raise ScheduleResolutionError(
+            'CANCELLED_DOMAIN',
+            f"gamePk={candidate.get('game_pk')} authoritative live status={code!r} detailed={detailed!r}",
+        )
+    if detailed_cf.startswith('completed early'):
         raise ScheduleResolutionError(
             'COMPLETED_EARLY_DOMAIN',
             f"gamePk={candidate.get('game_pk')} authoritative live status={code!r} detailed={detailed!r}",
         )
+    if detailed_cf == 'final: tied':
+        current_inning = _optional_int(linescore.get('currentInning'))
+        scheduled_innings = _optional_int(linescore.get('scheduledInnings'))
+        if (
+            current_inning is not None
+            and scheduled_innings is not None
+            and current_inning < scheduled_innings
+        ):
+            raise ScheduleResolutionError(
+                'COMPLETED_EARLY_TIED_DOMAIN',
+                f"gamePk={candidate.get('game_pk')} authoritative tied final at inning={current_inning} scheduled={scheduled_innings}",
+            )
+        raise ScheduleResolutionError(
+            'LIVE_TIED_SETTLEMENT_UNVERIFIED',
+            f"gamePk={candidate.get('game_pk')} authoritative tied final lacks proven early-completion semantics",
+        )
+
     resolved = _hydrate_schedule_candidate_base(candidate, live_payload)
     expected_season = candidate.get('expected_season')
     if expected_season is not None and not str(resolved.get('official_date') or '').startswith(str(expected_season)):
