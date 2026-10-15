@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from hashlib import sha256
 import json
+from pathlib import Path
 from typing import Any, Mapping
 
 from mlb_v2_source_acquisition import (
@@ -111,4 +112,10 @@ def normalize_offense_history_source(
         "source_record_id": f"mlb-offense-history:{game_pk}:{digest[:16]}",
         "source_sha256": digest,
     }
-\n\ndef write_sha256_sidecar(path: str | Path, digest: str) -> None:\n    value = str(digest).strip().lower()\n    if len(value) != 64 or any(ch not in "0123456789abcdef" for ch in value):\n        raise OffenseHistoryError("invalid sha256 digest")\n    Path(path).write_text(value + "\\n", encoding="utf-8")\n
+
+
+def write_sha256_sidecar(path: str | Path, digest: str) -> None:
+    value = str(digest).strip().lower()
+    if len(value) != 64 or any(ch not in "0123456789abcdef" for ch in value):
+        raise OffenseHistoryError("invalid sha256 digest")
+    Path(path).write_text(value + "\n", encoding="utf-8")
