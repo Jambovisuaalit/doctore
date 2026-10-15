@@ -4,12 +4,29 @@
   "title": "Doctore feature group manifest",
   "type": "object",
   "additionalProperties": false,
-  "required": ["schema_version", "dataset_id", "feature_schema_version", "created_at", "groups"],
+  "required": [
+    "schema_version",
+    "dataset_id",
+    "feature_schema_version",
+    "created_at",
+    "groups"
+  ],
   "properties": {
-    "schema_version": {"const": "doctore.feature-groups.v1"},
-    "dataset_id": {"type": "string", "minLength": 1},
-    "feature_schema_version": {"type": "string", "minLength": 1},
-    "created_at": {"type": "string", "format": "date-time"},
+    "schema_version": {
+      "const": "doctore.feature-groups.v1"
+    },
+    "dataset_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "feature_schema_version": {
+      "type": "string",
+      "minLength": 1
+    },
+    "created_at": {
+      "type": "string",
+      "format": "date-time"
+    },
     "groups": {
       "type": "array",
       "minItems": 1,
@@ -25,7 +42,15 @@
           "reason_codes"
         ],
         "properties": {
-          "name": {"enum": ["baseline", "starter", "bullpen", "park", "weather"]},
+          "name": {
+            "enum": [
+              "baseline",
+              "starter",
+              "bullpen",
+              "park",
+              "weather"
+            ]
+          },
           "status": {
             "enum": [
               "VERIFIED_BASELINE",
@@ -39,7 +64,10 @@
             "type": "array",
             "minItems": 1,
             "uniqueItems": true,
-            "items": {"type": "string", "minLength": 1}
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
           },
           "allowed_availability_modes": {
             "type": "array",
@@ -48,6 +76,7 @@
             "items": {
               "enum": [
                 "PRIOR_EVENT_FINAL",
+                "PRIOR_WINDOW_COMPLETE",
                 "AGGREGATE_PRIOR_EVENT_FINAL",
                 "PREGAME_SNAPSHOT",
                 "FORECAST_RUN",
@@ -55,15 +84,24 @@
               ]
             }
           },
-          "source_policy": {"type": "string", "minLength": 1},
+          "source_policy": {
+            "type": "string",
+            "minLength": 1
+          },
           "reason_codes": {
             "type": "array",
             "uniqueItems": true,
-            "items": {"type": "string", "minLength": 1}
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
           },
           "evidence": {
             "type": "array",
-            "items": {"type": "string", "minLength": 1}
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
           }
         }
       }

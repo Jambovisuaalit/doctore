@@ -67,6 +67,46 @@ class FeatureSchemaV2Tests(unittest.TestCase):
         record.pop("observed_at")
         self.assertIn("SOURCE_EVENT_NOT_FINAL_BEFORE_CUTOFF", validate_provenance_record(record))
 
+
+    def test_complete_prior_window_allows_empty_source_events_with_manifest(self) -> None:
+        record = {
+            "schema_version": "doctore.feature-provenance.v1",
+            "event_id": "mlb:2",
+            "feature_group": "bullpen",
+            "source": "MLB complete history universe",
+            "source_record_id": "window-1",
+            "availability_mode": "PRIOR_WINDOW_COMPLETE",
+            "feature_cutoff_at": "2026-07-10T18:00:00+00:00",
+            "window_start_at": "2026-07-07T18:00:00+00:00",
+            "history_universe_manifest_id": "universe-1",
+            "history_universe_manifest_sha256": "c" * 64,
+            "source_sha256": "d" * 64,
+            "source_events": [],
+        }
+        self.assertEqual((), validate_provenance_record(record))
+        validator = Draft202012Validator(
+            json.loads((ROOT / "contracts" / "feature-provenance-record.schema.json").read_text()),
+            format_checker=FormatChecker(),
+        )
+        self.assertEqual([], list(validator.iter_errors(record)))
+
+    def test_complete_prior_window_rejects_source_before_declared_window(self) -> None:
+        record = {
+            "schema_version": "doctore.feature-provenance.v1",
+            "event_id": "mlb:2",
+            "feature_group": "bullpen",
+            "source": "MLB complete history universe",
+            "source_record_id": "window-1",
+            "availability_mode": "PRIOR_WINDOW_COMPLETE",
+            "feature_cutoff_at": "2026-07-10T18:00:00+00:00",
+            "window_start_at": "2026-07-07T18:00:00+00:00",
+            "history_universe_manifest_id": "universe-1",
+            "history_universe_manifest_sha256": "c" * 64,
+            "source_sha256": "d" * 64,
+            "source_events": [{"event_id": "mlb:1", "end_at": "2026-07-07T17:59:59+00:00"}],
+        }
+        self.assertIn("SOURCE_EVENT_OUTSIDE_DECLARED_WINDOW", validate_provenance_record(record))
+
     def test_forecast_must_have_been_issued_before_cutoff(self) -> None:
         record = self.base_record()
         record.update({

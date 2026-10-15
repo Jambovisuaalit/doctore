@@ -212,6 +212,40 @@ class MlbV2BullpenFeatureTests(unittest.TestCase):
         self.assertIn("AWAY_BULLPEN_NO_PROVEN_PRIOR_GAME_3D", result["reason_codes"])
         self.assertIn("HOME_BULLPEN_NO_PROVEN_PRIOR_GAME_3D", result["reason_codes"])
 
+
+    def test_complete_history_universe_allows_proven_zero_window(self) -> None:
+        result = materialize_bullpen_group(
+            self.target(),
+            feature_cutoff_at="2021-07-20T18:00:00Z",
+            source_records=self.passing_sources(),
+            history_universe_evidence={
+                "manifest_id": "mlb-bullpen-history-universe:test",
+                "manifest_sha256": "b" * 64,
+                "completeness_status": "PASS",
+            },
+        )
+        self.assertEqual("PASS", result["status"])
+        self.assertEqual(0, result["features"]["away_bullpen_pitches_3d"])
+        self.assertEqual(0, result["features"]["home_bullpen_pitches_3d"])
+        self.assertEqual("PRIOR_WINDOW_COMPLETE", result["provenance"]["availability_mode"])
+        self.assertEqual([], result["provenance"]["source_events"])
+        self.assertEqual("2021-07-17T18:00:00Z", result["provenance"]["window_start_at"])
+        self.assertEqual((), validate_provenance_record(result["provenance"]))
+
+    def test_invalid_history_universe_evidence_stays_blocked(self) -> None:
+        result = materialize_bullpen_group(
+            self.target(),
+            feature_cutoff_at="2021-07-20T18:00:00Z",
+            source_records=self.passing_sources(),
+            history_universe_evidence={
+                "manifest_id": "bad",
+                "manifest_sha256": "not-a-hash",
+                "completeness_status": "PASS",
+            },
+        )
+        self.assertEqual("BLOCKED_PROVENANCE", result["status"])
+        self.assertIn("BULLPEN_HISTORY_UNIVERSE_EVIDENCE_INVALID", result["reason_codes"])
+
     def test_invalid_final_timestamp_for_relevant_source_fails_closed(self) -> None:
         sources = self.passing_sources()
         sources[0]["final_event_at"] = "bad"

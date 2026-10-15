@@ -8,6 +8,7 @@ from typing import Any, Mapping, Sequence
 SHA256_RE = re.compile(r"^[a-fA-F0-9]{64}$")
 ALLOWED_MODES = {
     "PRIOR_EVENT_FINAL",
+    "PRIOR_WINDOW_COMPLETE",
     "AGGREGATE_PRIOR_EVENT_FINAL",
     "PREGAME_SNAPSHOT",
     "FORECAST_RUN",
@@ -120,6 +121,48 @@ def validate_provenance_record(record: Mapping[str, Any]) -> tuple[str, ...]:
         else:
             reasons.append("MISSING_SOURCE_EVENT_PROVENANCE")
 
+    elif mode == "PRIOR_WINDOW_COMPLETE":
+        target_event_id = str(record["event_id"])
+        if any(field in record for field in ("source_event_id", "source_event_end_at")):
+            reasons.append("SOURCE_EVENT_REPRESENTATION_AMBIGUOUS")
+        manifest_id = str(record.get("history_universe_manifest_id", "")).strip()
+        if not manifest_id:
+            reasons.append("MISSING_HISTORY_UNIVERSE_MANIFEST_ID")
+        manifest_sha = str(record.get("history_universe_manifest_sha256", ""))
+        if not SHA256_RE.fullmatch(manifest_sha):
+            reasons.append("HISTORY_UNIVERSE_MANIFEST_SHA256_INVALID")
+        raw_window = str(record.get("window_start_at", "")).strip()
+        try:
+            window_start = _ts(raw_window, "window_start_at")
+            if window_start >= cutoff:
+                reasons.append("PRIOR_WINDOW_INVALID")
+        except FeatureProvenanceError:
+            window_start = None
+            reasons.append("WINDOW_START_AT_INVALID")
+        source_events = record.get("source_events")
+        if not isinstance(source_events, Sequence) or isinstance(source_events, (str, bytes)):
+            reasons.append("SOURCE_EVENTS_INVALID")
+        else:
+            seen_ids: set[str] = set()
+            for index, source in enumerate(source_events):
+                if not isinstance(source, Mapping):
+                    reasons.append("SOURCE_EVENT_INVALID")
+                    continue
+                source_id = str(source.get("event_id", "")).strip()
+                end_at = str(source.get("end_at", "")).strip()
+                if source_id in seen_ids and source_id:
+                    reasons.append("SOURCE_EVENT_DUPLICATE")
+                seen_ids.add(source_id)
+                _validate_prior_source(
+                    target_event_id=target_event_id, source_event_id=source_id,
+                    source_event_end_at=end_at, cutoff=cutoff, reasons=reasons, index=index,
+                )
+                if window_start is not None and end_at:
+                    try:
+                        if _ts(end_at, f"source_event_end_at[{index}]") < window_start:
+                            reasons.append("SOURCE_EVENT_OUTSIDE_DECLARED_WINDOW")
+                    except FeatureProvenanceError:
+                        pass
     elif mode == "AGGREGATE_PRIOR_EVENT_FINAL":
         if any(field in record for field in ("source_event_id", "source_event_end_at", "source_events")):
             reasons.append("AGGREGATE_SOURCE_EVENT_REPRESENTATION_AMBIGUOUS")

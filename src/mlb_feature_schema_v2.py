@@ -109,7 +109,7 @@ FEATURE_GROUPS: Mapping[str, FeatureGroupSpec] = {
     "bullpen": FeatureGroupSpec(
         name="bullpen",
         columns=BULLPEN_COLUMNS,
-        allowed_availability_modes=("PRIOR_EVENT_FINAL",),
+        allowed_availability_modes=("PRIOR_EVENT_FINAL", "PRIOR_WINDOW_COMPLETE"),
         historical_2012_2021_status="READY_TO_ACQUIRE",
         source_policy=(
             "Usage may be derived only from completed prior games whose final state "
