@@ -1,0 +1,60 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://doctore.local/schemas/mlb-pregame-context.schema.json",
+  "title": "Doctore MLB player-hits pregame context snapshot",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version", "source_name", "source_payload_sha256", "event_id",
+    "source_game_pk", "official_date", "slate_id", "scheduled_start_at",
+    "observed_at", "feature_cutoff_at", "lineup_status", "starter_status",
+    "away_lineup", "home_lineup", "away_starter", "home_starter",
+    "training_eligible", "reason_codes"
+  ],
+  "properties": {
+    "schema_version": {"const": "doctore.mlb-pregame-context.v1"},
+    "source_name": {"type": "string", "minLength": 1},
+    "source_payload_sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "event_id": {"type": "string", "pattern": "^mlb:[0-9]+$"},
+    "source_game_pk": {"type": "integer", "minimum": 1},
+    "official_date": {"type": "string", "format": "date"},
+    "slate_id": {"type": "string", "minLength": 1},
+    "scheduled_start_at": {"type": "string", "format": "date-time"},
+    "observed_at": {"type": "string", "format": "date-time"},
+    "feature_cutoff_at": {"type": "string", "format": "date-time"},
+    "lineup_status": {"enum": ["confirmed", "unavailable"]},
+    "starter_status": {"enum": ["probable", "unavailable"]},
+    "away_lineup": {"$ref": "#/$defs/lineup"},
+    "home_lineup": {"$ref": "#/$defs/lineup"},
+    "away_starter": {"oneOf": [{"$ref": "#/$defs/starter"}, {"type": "null"}]},
+    "home_starter": {"oneOf": [{"$ref": "#/$defs/starter"}, {"type": "null"}]},
+    "training_eligible": {"type": "boolean"},
+    "reason_codes": {"type": "array", "items": {"type": "string"}, "uniqueItems": true}
+  },
+  "$defs": {
+    "lineup": {
+      "type": "array",
+      "maxItems": 9,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["player_id", "player_name", "batting_order_position"],
+        "properties": {
+          "player_id": {"type": "string", "pattern": "^mlbam:[0-9]+$"},
+          "player_name": {"type": "string"},
+          "batting_order_position": {"type": "integer", "minimum": 1, "maximum": 9}
+        }
+      }
+    },
+    "starter": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["player_id", "player_name", "status"],
+      "properties": {
+        "player_id": {"type": "string", "pattern": "^mlbam:[0-9]+$"},
+        "player_name": {"type": "string"},
+        "status": {"const": "probable"}
+      }
+    }
+  }
+}
