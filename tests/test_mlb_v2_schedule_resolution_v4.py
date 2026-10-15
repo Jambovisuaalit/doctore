@@ -43,7 +43,8 @@ class MlbV2ScheduleResolutionV4Tests(unittest.TestCase):
         return {'dates': [{'games': list(rows)}]}
 
     def live(self, *, status='F', detailed='Final', game_pk=1, venue_id=10,
-             game_date='2014-05-02T00:00:00Z', away_score=2, home_score=1, innings=9):
+             game_date='2014-05-02T00:00:00Z', away_score=2, home_score=1,
+             innings=9, current_inning=None):
         return {
             'gamePk': game_pk,
             'gameData': {
@@ -56,6 +57,7 @@ class MlbV2ScheduleResolutionV4Tests(unittest.TestCase):
             'liveData': {
                 'linescore': {
                     'scheduledInnings': innings,
+                    'currentInning': current_inning,
                     'teams': {'away': {'runs': away_score}, 'home': {'runs': home_score}},
                 }
             },
@@ -113,6 +115,51 @@ class MlbV2ScheduleResolutionV4Tests(unittest.TestCase):
                 self.live(status='FR', detailed='Completed Early: Rain'),
             )
         self.assertEqual('COMPLETED_EARLY_DOMAIN', ctx.exception.code)
+
+
+    def test_authoritative_cancelled_is_domain_exclusion(self):
+        row = self.row(status='DI', detailed='Postponed')
+        games, _, _ = normalize_schedule_games_v4(self.payload(row), 2014)
+        with self.assertRaises(ScheduleResolutionError) as ctx:
+            hydrate_schedule_candidate_v4(
+                games[0],
+                self.live(status='CI', detailed='Cancelled: Inclement Weather'),
+            )
+        self.assertEqual('CANCELLED_DOMAIN', ctx.exception.code)
+
+    def test_authoritative_shortened_tied_final_is_domain_exclusion(self):
+        row = self.row(status='DI', detailed='Postponed')
+        games, _, _ = normalize_schedule_games_v4(self.payload(row), 2014)
+        with self.assertRaises(ScheduleResolutionError) as ctx:
+            hydrate_schedule_candidate_v4(
+                games[0],
+                self.live(
+                    status='FT',
+                    detailed='Final: Tied',
+                    innings=9,
+                    current_inning=6,
+                    away_score=1,
+                    home_score=1,
+                ),
+            )
+        self.assertEqual('COMPLETED_EARLY_TIED_DOMAIN', ctx.exception.code)
+
+    def test_tied_final_without_proven_early_completion_remains_blocked(self):
+        row = self.row(status='DI', detailed='Postponed')
+        games, _, _ = normalize_schedule_games_v4(self.payload(row), 2014)
+        with self.assertRaises(ScheduleResolutionError) as ctx:
+            hydrate_schedule_candidate_v4(
+                games[0],
+                self.live(
+                    status='FT',
+                    detailed='Final: Tied',
+                    innings=9,
+                    current_inning=9,
+                    away_score=1,
+                    home_score=1,
+                ),
+            )
+        self.assertEqual('LIVE_TIED_SETTLEMENT_UNVERIFIED', ctx.exception.code)
 
     def test_other_nonfinal_authoritative_status_stays_blocked(self):
         row = self.row(status='DI', detailed='Postponed')
