@@ -190,3 +190,25 @@ Historical CSV rows become `LEGACY_UNCONFIRMED`, never silently PLACED. Open
 legacy stakes remain conservatively included in exposure and are counted
 separately. Unsettled legacy records can be explicitly confirmed; already settled
 legacy history requires a dedicated migration/revision before confirmation.
+
+## Approval-time revalidation
+
+Approval writes re-run the canonical decision at the server's current UTC time,
+inside the shared ledger lock. Historical evaluation remains read-only. Expired
+market/model/portfolio/context inputs cannot authorize a new approval; a changed
+stake limit requires a new decision and human review (or an explicit REDUCE that
+fits both limits). No new bookmaker price is fetched: a fresh supplied snapshot
+is required and is not proof that a price remains executable.
+
+Pending approvals reserve capacity alongside actual/legacy open liabilities.
+They remain excluded from reported actual exposure. Ledger reservations are
+added conservatively to the supplied external portfolio, including daily and
+rolling turnover. The snapshot has no ledger watermark or position identities:
+**supply external-only exposure/balance for accurate sizing**. If it already
+includes this ledger, overlap can reduce capacity twice; it is never subtracted
+by assumption. Existing rows lack correlation identity, so open ledger stakes
+are conservatively reserved against every correlation group. Reservations do not
+automatically expire or release on cancellation; a later audited cancellation
+workflow is required. Mixed currencies and unreplayed placement journals block
+new approvals. External bankroll/balance/drawdown remain supplied data, requiring
+a fresh snapshot; this is not a bookmaker account synchronization service.

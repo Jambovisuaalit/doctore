@@ -170,6 +170,11 @@ class McpServerTests(unittest.TestCase):
             if module_name == "doctore_mcp.server" or module_name.startswith("doctore_mcp."):
                 sys.modules.pop(module_name, None)
         self.server = importlib.import_module("doctore_mcp.server")
+        from unittest.mock import patch
+        from datetime import datetime
+        clock = patch("doctore_mcp.ledger.approval_time", return_value=datetime.fromisoformat("2026-07-24T11:00:00+03:00"))
+        clock.start()
+        self.addCleanup(clock.stop)
         self.evaluation = self.server.DecisionInput(
             model_output=model_output(),
             market_snapshot=market_snapshot(),
@@ -220,6 +225,87 @@ class McpServerTests(unittest.TestCase):
         duplicate = asyncio.run(self.server.doctore_log_bet(valid))
         self.assertFalse(duplicate.logged)
         self.assertIn("already logged", duplicate.reason)
+
+    def approval(self, evaluation=None, stake=None):
+        evaluation = evaluation or self.evaluation
+        decision = asyncio.run(self.server.doctore_evaluate_bet(evaluation)).decision_output
+        return asyncio.run(self.server.doctore_log_bet(self.server.LogBetInput(
+            evaluation=evaluation, decision_output=decision,
+            human_decision="REDUCE" if stake is not None else "APPROVE", approved_stake=stake)))
+
+    def test_approval_uses_wall_clock_even_for_valid_historical_decision(self):
+        from unittest.mock import patch
+        from datetime import datetime
+        with patch("doctore_mcp.ledger.approval_time", return_value=datetime.fromisoformat("2026-10-15T03:00:00+00:00")):
+            result = self.approval()
+        self.assertFalse(result.logged)
+        self.assertIn("PORTFOLIO_STALE", result.reason)
+        self.assertFalse(Path(os.environ["DOCTORE_BET_LOG"]).exists())
+
+    def test_approval_rejects_price_that_expired_since_evaluation(self):
+        from unittest.mock import patch
+        from datetime import datetime
+        evaluation = self.evaluation.model_copy(deep=True)
+        evaluation.portfolio_state["captured_at"] = "2026-07-24T11:05:00+03:00"
+        evaluation.evaluated_at = "2026-07-24T11:05:00+03:00"
+        evaluation.market_snapshot["captured_at"] = "2026-07-24T11:00:00+03:00"
+        with patch("doctore_mcp.ledger.approval_time", return_value=datetime.fromisoformat("2026-07-24T11:05:01+03:00")):
+            result = self.approval(evaluation)
+        self.assertFalse(result.logged)
+        self.assertIn("MARKET_SNAPSHOT_STALE", result.reason)
+
+    def test_pending_approvals_reserve_capacity_against_reused_snapshot(self):
+        evaluation = self.evaluation.model_copy(deep=True)
+        evaluation.risk_policy["caps"]["max_open_exposure_fraction"] = 0.03
+        first = self.approval(evaluation)
+        self.assertTrue(first.logged)
+        second = evaluation.model_copy(deep=True)
+        second.market_snapshot["market_id"] += "-second"
+        second.model_output["market_id"] += "-second"
+        result = self.approval(second)
+        self.assertFalse(result.logged)
+        self.assertIn("NO_RISK_CAPACITY", result.reason)
+
+    def test_actual_liability_replaces_approval_reservation(self):
+        first = self.approval()
+        self.confirm_fixture_bet(first, actual_stake=5000)
+        second = self.evaluation.model_copy(deep=True)
+        second.market_snapshot["market_id"] += "-second"
+        second.model_output["market_id"] += "-second"
+        self.assertFalse(self.approval(second).logged)
+
+    def test_reduced_stake_can_fit_remaining_capacity(self):
+        self.assertTrue(self.approval().logged)
+        second = self.evaluation.model_copy(deep=True)
+        second.market_snapshot["market_id"] += "-second"
+        second.model_output["market_id"] += "-second"
+        second.risk_policy["caps"]["max_open_exposure_fraction"] = 0.04
+        self.assertFalse(self.approval(second).logged)
+        self.assertTrue(self.approval(second, stake=500).logged)
+
+    def test_parallel_approvals_cannot_spend_same_capacity(self):
+        from concurrent.futures import ThreadPoolExecutor
+        evaluation = self.evaluation.model_copy(deep=True)
+        evaluation.risk_policy["caps"]["max_open_exposure_fraction"] = 0.03
+        other = evaluation.model_copy(deep=True)
+        other.market_snapshot["market_id"] += "-parallel"
+        other.model_output["market_id"] += "-parallel"
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            results = list(pool.map(self.approval, [evaluation, other]))
+        self.assertEqual(1, sum(result.logged for result in results))
+
+    def test_unreplayed_placement_journal_blocks_new_approval(self):
+        import json
+        from doctore_mcp import ledger
+        first = self.approval()
+        journal = ledger.BET_LOG_PATH.with_suffix(".csv.placements.jsonl")
+        journal.write_text(json.dumps({"decision_id": first.decision_id, "placement_sha256": "a" * 64}) + "\n")
+        other = self.evaluation.model_copy(deep=True)
+        other.market_snapshot["market_id"] += "-journal"
+        other.model_output["market_id"] += "-journal"
+        result = self.approval(other)
+        self.assertFalse(result.logged)
+        self.assertIn("REPLAY_REQUIRED", result.reason)
 
     def confirm_fixture_bet(self, logged, **overrides):
         params = dict(decision_id=logged.decision_id, placement_confirmed=True,
