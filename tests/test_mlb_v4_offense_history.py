@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+import tempfile
 import sys
 import unittest
 
@@ -49,6 +50,15 @@ class MlbV4OffenseHistoryTests(unittest.TestCase):
         self.assertEqual("2020-08-09T20:05:00Z", out["final_event_at"])
         self.assertEqual(64, len(out["source_sha256"]))
         self.assertTrue(out["source_record_id"].startswith("mlb-offense-history:123:"))
+
+
+    def test_sha256_sidecar_uses_real_newline(self):
+        digest = "a" * 64
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "manifest.sha256"
+            write_sha256_sidecar(path, digest)
+            self.assertEqual((digest + "\n").encode("utf-8"), path.read_bytes())
+            self.assertNotIn(b"\\n", path.read_bytes())
 
 
 if __name__ == "__main__":
