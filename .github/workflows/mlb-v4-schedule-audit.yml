@@ -1,0 +1,109 @@
+name: MLB v4 authoritative schedule audit
+
+on:
+  push:
+    branches: ['research/mlb-v4-schedule-audit-*']
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Checkout exact validated source SHA
+        uses: actions/checkout@v4
+        with:
+          ref: 63c5f36a9835d287947eda440326ec1d5c2bbea4
+          fetch-depth: 1
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Resolve all historical schedule ambiguities with live evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          PYTHONPATH=src python - <<'PY'
+          import json, time
+          from collections import Counter
+          from pathlib import Path
+          from urllib.parse import urlencode
+          from urllib.request import Request, urlopen
+          from urllib.error import HTTPError, URLError
+
+          from mlb_v2_schedule_resolution_v4 import normalize_schedule_games_v4, hydrate_schedule_candidate_v4
+          from mlb_v2_source_acquisition import ScheduleResolutionError
+
+          UA='Doctore-Sports/1.0 mlb-v4-schedule-audit'
+          def fetch_json(url, attempts=4):
+              last=None
+              for attempt in range(1, attempts+1):
+                  try:
+                      req=Request(url, headers={'User-Agent':UA,'Accept':'application/json'})
+                      with urlopen(req, timeout=90) as r:
+                          return json.loads(r.read().decode('utf-8'))
+                  except (HTTPError, URLError, TimeoutError, json.JSONDecodeError) as exc:
+                      last=exc
+                      if attempt < attempts: time.sleep(2**(attempt-1))
+              raise RuntimeError(f'fetch failed: {url}: {last}')
+
+          seasons=[]
+          all_rows=[]
+          for season in range(2012, 2022):
+              schedule_url='https://statsapi.mlb.com/api/v1/schedule?' + urlencode({'sportId':1,'season':season,'gameType':'R'})
+              payload=fetch_json(schedule_url)
+              candidates, exclusions, stats=normalize_schedule_games_v4(payload, season)
+              hydration=[c for c in candidates if c.get('needs_hydration')]
+              outcomes=[]
+              for candidate in hydration:
+                  pk=int(candidate['game_pk'])
+                  kind=str(candidate.get('schedule_resolution_kind') or candidate.get('schedule_revision_resolution') or 'UNKNOWN')
+                  live=fetch_json(f'https://statsapi.mlb.com/api/v1.1/game/{pk}/feed/live')
+                  try:
+                      resolved=hydrate_schedule_candidate_v4(candidate, live)
+                  except ScheduleResolutionError as exc:
+                      outcomes.append({'game_pk':pk,'kind':kind,'status':'EXCLUDED_OR_BLOCKED','reason':exc.code,'detail':exc.detail})
+                  else:
+                      outcomes.append({'game_pk':pk,'kind':kind,'status':'RESOLVED_FINAL','reason':None,'official_date':resolved.get('official_date'),'scheduled_innings':resolved.get('scheduled_innings'),'venue_id':resolved.get('venue_id')})
+              unresolved_exclusions=[e for e in exclusions if e.get('reason') in {'DUPLICATE_STRICT_FINAL_CONFLICT','NO_STRICT_PLAYED_FINAL_ROW'}]
+              report={
+                  'season':season,
+                  'strict_final_conflicts_after_candidate_resolution':stats.get('strict_final_conflicts',0),
+                  'unresolved_no_strict_after_candidate_resolution':stats.get('unresolved_no_strict_played_final',0),
+                  'revision_hydration_candidates':stats.get('schedule_revision_hydration_candidates',0),
+                  'unresolved_hydration_candidates':stats.get('unresolved_schedule_hydration_candidates',0),
+                  'hydration_outcome_counts':dict(Counter(o['status'] for o in outcomes)),
+                  'hydration_reason_counts':dict(Counter(o['reason'] for o in outcomes if o.get('reason'))),
+                  'unresolved_exclusions':unresolved_exclusions,
+                  'outcomes':outcomes,
+              }
+              seasons.append(report)
+              all_rows.extend({'season':season,**o} for o in outcomes)
+              print(json.dumps(report, sort_keys=True), flush=True)
+
+          summary={
+              'schema_version':'doctore.mlb-v4-schedule-audit.v1',
+              'source_sha':'63c5f36a9835d287947eda440326ec1d5c2bbea4',
+              'seasons':seasons,
+              'total_hydration_candidates':len(all_rows),
+              'total_resolved_final':sum(r['status']=='RESOLVED_FINAL' for r in all_rows),
+              'total_excluded_or_blocked':sum(r['status']=='EXCLUDED_OR_BLOCKED' for r in all_rows),
+              'remaining_schedule_conflicts':sum(s['strict_final_conflicts_after_candidate_resolution'] for s in seasons),
+              'remaining_unresolved_schedule':sum(s['unresolved_no_strict_after_candidate_resolution'] for s in seasons),
+              'outcome_reason_counts':dict(Counter(r['reason'] for r in all_rows if r.get('reason'))),
+          }
+          Path('results').mkdir()
+          Path('results/mlb-v4-schedule-audit.json').write_text(json.dumps(summary, indent=2, sort_keys=True)+'\n')
+          print(json.dumps(summary, indent=2, sort_keys=True))
+          PY
+
+      - name: Upload audit
+        uses: actions/upload-artifact@v4
+        with:
+          name: mlb-v4-schedule-audit-63c5f36a
+          path: results/mlb-v4-schedule-audit.json
+          retention-days: 30
