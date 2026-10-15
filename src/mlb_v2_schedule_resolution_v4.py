@@ -23,6 +23,8 @@ IMMUTABLE_FIELDS = (
     "home_score",
 )
 MUTABLE_FIELDS = ("event_start_at", "venue_id", "venue_name")
+CANCELLED_STATUS_CODES = frozenset({"CR", "CA", "CO", "CI", "C9"})
+COMPLETED_EARLY_STATUS_CODES = frozenset({"FR", "FO"})
 
 
 def _optional_int(value: Any) -> int | None:
@@ -246,7 +248,18 @@ def hydrate_schedule_candidate_v4(
     status = game_data.get('status') or {}
     code = str(status.get('statusCode') or status.get('codedGameState') or '').upper()
     detailed = str(status.get('detailedState') or '').strip()
-    if code == 'FR' and detailed.casefold().startswith('completed early'):
+    normalized_detail = detailed.casefold()
+    if code in CANCELLED_STATUS_CODES and normalized_detail.startswith('cancelled'):
+        raise ScheduleResolutionError(
+            'CANCELLED_UNPLAYED_DOMAIN',
+            f"gamePk={candidate.get('game_pk')} authoritative live status={code!r} detailed={detailed!r}",
+        )
+    if code == 'FT' and normalized_detail.startswith('final: tied'):
+        raise ScheduleResolutionError(
+            'TIED_FINAL_DOMAIN',
+            f"gamePk={candidate.get('game_pk')} authoritative live status={code!r} detailed={detailed!r}",
+        )
+    if code in COMPLETED_EARLY_STATUS_CODES and normalized_detail.startswith('completed early'):
         raise ScheduleResolutionError(
             'COMPLETED_EARLY_DOMAIN',
             f"gamePk={candidate.get('game_pk')} authoritative live status={code!r} detailed={detailed!r}",
