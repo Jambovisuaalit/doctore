@@ -1,0 +1,31 @@
+name: MLB offense boxscore probe
+
+on:
+  push:
+    branches: ['research/mlb-offense-boxscore-probe-*']
+
+jobs:
+  probe:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: b3955ba8e55974b99f0cb5a494ed9e53f214e641
+          fetch-depth: 1
+      - shell: bash
+        run: |
+          python - <<'PY'
+          import json
+          from urllib.request import Request,urlopen
+          pks=[317775,567304,632457]
+          wanted=['plateAppearances','baseOnBalls','strikeOuts','homeRuns','hits','atBats','runs']
+          for pk in pks:
+              req=Request(f'https://statsapi.mlb.com/api/v1/game/{pk}/boxscore',headers={'User-Agent':'Doctore-Sports/1.0 offense-probe','Accept':'application/json'})
+              with urlopen(req,timeout=90) as r: p=json.loads(r.read().decode())
+              row={'game_pk':pk,'teams':{}}
+              for side in ('away','home'):
+                  t=(p.get('teams') or {}).get(side) or {}
+                  batting=((t.get('teamStats') or {}).get('batting') or {})
+                  row['teams'][side]={'team_id':((t.get('team') or {}).get('id')),'batting':{k:batting.get(k) for k in wanted},'all_keys':sorted(batting.keys())}
+              print(json.dumps(row,sort_keys=True))
+          PY
