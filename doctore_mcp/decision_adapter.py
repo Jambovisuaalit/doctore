@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from typing import Optional
 import json
+import math
 
 from .runtime import MAX_SNAPSHOT_AGE_MINUTES, minutes_since, resolve_artifact_path
 from bet_decision_core import evaluate_bet_decision
@@ -47,6 +48,8 @@ def check_data_quality(params: QualityGateInput) -> QualityGateOutput:
         return QualityGateOutput(status="BLOCKED", reasons=[f"invalid snapshot_at: {exc}"], age_minutes=None)
 
     limit = params.max_age_minutes or MAX_SNAPSHOT_AGE_MINUTES
+    if not math.isfinite(age) or not math.isfinite(limit) or not math.isfinite(params.contradiction_threshold_pct):
+        return QualityGateOutput(status="BLOCKED", reasons=["quality limits and snapshot age must be finite"], age_minutes=None)
     if age < 0:
         reasons.append(f"snapshot timestamp is {-age:.1f} minutes in the future")
     elif age > limit:
@@ -60,7 +63,7 @@ def check_data_quality(params: QualityGateInput) -> QualityGateOutput:
                 reasons.append(f"current odds missing selection {selection!r}")
                 continue
             current = params.current_odds[selection]
-            if reference <= 1 or current <= 1:
+            if not math.isfinite(reference) or not math.isfinite(current) or reference <= 1 or current <= 1:
                 reasons.append(f"{selection!r}: decimal odds must be greater than 1")
                 continue
             difference = abs(current - reference) / reference * 100

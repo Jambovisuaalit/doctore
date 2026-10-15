@@ -78,7 +78,16 @@ def materialize_offense_process_group(
     except (KeyError, TypeError, ValueError) as exc:
         raise OffenseProcessMaterializationError("target identity missing") from exc
     selected: dict[int, list[Mapping[str, Any]]] = {away_team_id: [], home_team_id: []}
+    seen_events: set[str] = set()
+    seen_games: set[str] = set()
     for record in source_records:
+        source_id = str(record.get("event_id", "")).strip()
+        game_id = str(record.get("game_pk", "")).strip()
+        if not source_id or source_id in seen_events or (game_id and game_id in seen_games):
+            raise OffenseProcessMaterializationError("duplicate or missing source event identity")
+        seen_events.add(source_id)
+        if game_id:
+            seen_games.add(game_id)
         if record.get("offense_status") != "PASS" or not record.get("offense_history_eligible"):
             continue
         if int(str(record.get("official_date", "0000"))[:4]) != season:

@@ -22,6 +22,15 @@ class MlbOffenseProcessFeatureTests(unittest.TestCase):
             "offense_status": "PASS", "offense_history_eligible": True, "source_sha256": "a" * 64,
         }
 
+    def test_duplicate_history_cannot_fill_last10(self):
+        row = self.record(100, "2020-06-19", 1, 2, "2020-06-19T20:00:00Z")
+        target = {"event_id": "mlb:999", "official_date": "2020-06-20", "away_team_id": 1, "home_team_id": 2}
+        with self.assertRaisesRegex(ValueError, "duplicate"):
+            materialize_offense_process_group(target, feature_cutoff_at="2020-06-20T18:00:00Z", source_records=[row] * 10)
+        alias = dict(row, event_id="mlb:alias")
+        with self.assertRaisesRegex(ValueError, "duplicate"):
+            materialize_offense_process_group(target, feature_cutoff_at="2020-06-20T18:00:00Z", source_records=[row, alias])
+
     def test_last10_completed_same_season_only(self):
         cutoff = datetime(2020, 6, 20, 18, 0, tzinfo=timezone.utc)
         rows = []
