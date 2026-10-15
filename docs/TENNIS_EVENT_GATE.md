@@ -1,4 +1,59 @@
-# Tennis source acquisition, identity and freshness
+# Tennis research: keyless default
+
+## Default workflow
+
+The runtime default is `DOCTORE_TENNIS_MODE=research`. No Sportradar key or paid
+provider is required. Unknown mode values fail closed. The example YAML mirrors
+this default; runtime mode selection uses the environment setting above.
+
+1. Install the pinned optional background-data dependency: `pip install -r requirements-tennis.txt`.
+2. Use `doctore_tennis_data` with explicit `tour=atp|wta` for scoreboard, calendar,
+   rankings or player information. These are research reads, never live certification.
+3. Supply bookmaker odds as a canonical timestamped market snapshot. The local
+   `analyze_supplied_market` command validates the complete two-price snapshot and
+   reports raw implied probability, proportional no-vig and overround. This is a
+   generic price-vector calculation, not a tennis model or payoff approval. It
+   returns no model probability, EV recommendation or stake. Missing/future/stale
+   prices, incomplete/closed markets and nonfinite prices fail closed.
+4. Tennis candidate approval remains BLOCKED with `TENNIS_RESEARCH_ONLY`.
+   Price arithmetic cannot certify an event, execution, retirement rules or an edge.
+
+Local status, no package/key/network required:
+
+```json
+{"command":"get_capabilities","tour":"atp"}
+```
+
+Background data:
+
+```json
+{"command":"get_scoreboard","tour":"atp"}
+```
+
+User-supplied odds research:
+
+```text
+{"command":"analyze_supplied_market","tour":"atp","market_snapshot":<canonical TENNIS snapshot>}
+```
+
+These are parameters to the existing `doctore_tennis_data` tool. Generic source
+reads retain `event_freshness_verified=false`, `research_only=true`,
+`recommendation_available=false` and `live_decisions_enabled=false`.
+`get_capabilities` and price-vector analysis are local and work even when external
+source access is disabled. Their provenance is local_configuration/user_supplied,
+not ESPN. Quotes must be at most 300 seconds old for this local workflow.
+
+The optional provider below is disabled in research mode, even if a credential
+exists. Explicit acquisition returns `TENNIS_PAID_PROVIDER_DISABLED`; missing a
+Sportradar key is not a failure of the default research workflow.
+
+## Optional verified-source integration
+
+The remaining sections describe opt-in infrastructure. To use it, an operator
+must explicitly set `DOCTORE_TENNIS_MODE=verified_prematch` in addition to existing
+provider credentials, reviewed mapping and the per-command live-fetch flag. This
+setting does not enable in-play betting, bypass model admission or resolve
+canonical tennis retirement/void payoff limitations.
 
 ## Corrected trust boundary
 
@@ -108,3 +163,12 @@ Direct calls to the pure core remain a research contract whose caller owns trust
 input acquisition. The MCP decision path owns loading and rejects arbitrary caller
 evidence. Local filesystem permissions are the trust boundary; the hash is not a
 defense against an administrator rewriting both provider bytes and their digest.
+
+## Actual keyless source verification on 2026-10-15
+
+The pinned sports-skills 0.37.1 dependency was installed in the test environment.
+Explicit real ESPN reads succeeded at 03:42:59 UTC for both tours:
+ATP scoreboard returned one tournament; WTA returned four tournaments. Both
+retained event_freshness_verified=false and recommendation_available=false.
+These observations demonstrate transport/schema compatibility, not match
+freshness, complete coverage or bookmaker mapping. No Sportradar call was made.

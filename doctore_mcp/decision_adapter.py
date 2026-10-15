@@ -22,8 +22,12 @@ from .schemas import (
 def run_decision(params: DecisionInput) -> dict:
     context = params.sport_context
     if params.market_snapshot.get("sport") == "TENNIS":
-        from .tennis_verification import verified_context
-        context = verified_context(params.market_snapshot, params.evaluated_at)
+        from .tennis_data import tennis_mode
+        if tennis_mode() == "verified_prematch":
+            from .tennis_verification import verified_context
+            context = verified_context(params.market_snapshot, params.evaluated_at)
+        else:
+            context = {"research_only": True}
     return evaluate_bet_decision(
         model_output=params.model_output,
         market_snapshot=params.market_snapshot,
