@@ -52,6 +52,13 @@ class MlbV4OffenseHistoryTests(unittest.TestCase):
         self.assertTrue(out["source_record_id"].startswith("mlb-offense-history:123:"))
 
 
+    def test_sha256_sidecar_rejects_invalid_digest(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "manifest.sha256"
+            with self.assertRaises(OffenseHistoryError):
+                write_sha256_sidecar(path, "not-a-sha256")
+            self.assertFalse(path.exists())
+
     def test_sha256_sidecar_uses_real_newline(self):
         digest = "a" * 64
         with tempfile.TemporaryDirectory() as tmp:
