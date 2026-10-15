@@ -86,6 +86,9 @@ def line_from_csv(value: str) -> Any:
 
 def read_bet_rows() -> list[dict[str, str]]:
     if not BET_LOG_PATH.exists():
+        from .settlement_store import path as settlement_db_path
+        if settlement_db_path().exists():
+            raise ValueError("settlement database exists but CSV ledger is missing; restore ledger")
         return []
     with BET_LOG_PATH.open(newline="", encoding="utf-8") as handle:
         reader = csv.DictReader(handle)
@@ -100,7 +103,8 @@ def read_bet_rows() -> list[dict[str, str]]:
                 row.setdefault(key, "")
             if not row["placement_status"]:
                 row["placement_status"] = "LEGACY_UNCONFIRMED"
-        return rows
+        from .settlement_store import overlay
+        return overlay(rows)
 
 
 def write_bet_rows(rows: list[dict[str, Any]]) -> None:

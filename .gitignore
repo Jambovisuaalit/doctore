@@ -31,3 +31,9 @@ research/human_review/logs/
 bankroll/
 ledger/
 settlements/
+
+# Private transactional settlement state
+*.sqlite3
+*.sqlite3-journal
+*.sqlite3-wal
+*.sqlite3-shm

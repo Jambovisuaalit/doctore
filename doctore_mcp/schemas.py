@@ -178,7 +178,19 @@ class SettlementResult(str, Enum):
     HALF_LOSS = "half_loss"
 
 
+class SettlementRevision(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+    confirmed: Literal[True]
+    action: Literal["CORRECT_RESULT", "ADD_CLOSING"]
+    request_id: str = Field(..., min_length=1)
+    expected_settlement_sha256: str = Field(..., pattern=r"^[a-f0-9]{64}$")
+    reason: str = Field(..., min_length=1)
+    reviewer: str = Field(..., min_length=1)
+    source_reference: str = Field(..., min_length=1)
+
+
 class SettleBetInput(BaseModel):
+    revision: Optional[SettlementRevision] = None
     model_config = ConfigDict(extra="forbid")
     decision_id: str = Field(..., pattern=r"^[a-f0-9]{64}$")
     closing_market_snapshot: Optional[dict[str, Any]] = None
@@ -188,6 +200,9 @@ class SettleBetInput(BaseModel):
 
 
 class SettleBetOutput(BaseModel):
+    settlement_sha256: Optional[str] = None
+    audit_sha256: Optional[str] = None
+    projection_warning: Optional[str] = None
     settled: bool
     idempotent_replay: bool
     decision_id: str

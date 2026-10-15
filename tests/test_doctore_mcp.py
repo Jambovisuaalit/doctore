@@ -412,6 +412,103 @@ class McpServerTests(unittest.TestCase):
         result = self.confirm_fixture_bet(logged, placed_at="2026-07-24T08:01:00Z")
         self.assertTrue(result.idempotent_replay)
 
+    def settled_fixture(self):
+        logged = self.log_fixture_bet()
+        params = self.server.SettleBetInput(decision_id=logged.decision_id, result="loss",
+            settled_at="2026-07-24T22:00:00+03:00", closing_missing_reason="No retained close")
+        return logged, asyncio.run(self.server.doctore_settle_bet(params))
+
+    def revision_params(self, logged, settled, action="CORRECT_RESULT", **changes):
+        params = dict(decision_id=logged.decision_id, result="win",
+            revision=dict(confirmed=True, action=action, request_id="review-1",
+                expected_settlement_sha256=settled.settlement_sha256,
+                reason="Verified corrected bookmaker result", reviewer="fixture reviewer",
+                source_reference="synthetic settlement receipt"))
+        params.update(changes)
+        return self.server.SettleBetInput(**params)
+
+    def test_explicit_result_revision_preserves_before_after_and_replays(self):
+        logged, settled = self.settled_fixture()
+        params = self.revision_params(logged, settled)
+        result = asyncio.run(self.server.doctore_settle_bet(params))
+        self.assertGreater(result.profit_loss, 0)
+        self.assertNotEqual(settled.settlement_sha256, result.settlement_sha256)
+        self.assertTrue(asyncio.run(self.server.doctore_settle_bet(params)).idempotent_replay)
+        store = importlib.import_module("doctore_mcp.settlement_store")
+        history = store.history()
+        self.assertEqual(2, len(history))
+        self.assertEqual("loss", history[1]["before"]["result"])
+        self.assertEqual("win", history[1]["after"]["result"])
+        self.assertEqual(history[0]["audit_sha256"], history[1]["previous_audit_sha256"])
+        with self.assertRaisesRegex(ValueError, "version conflict"):
+            asyncio.run(self.server.doctore_settle_bet(self.revision_params(logged, settled,
+                revision=dict(params.revision.model_dump(), request_id="stale-review"))))
+
+    def test_add_closing_later_preserves_result_and_realized_pnl(self):
+        logged, settled = self.settled_fixture()
+        close = market_snapshot(odds=1.80, captured_at="2026-07-24T19:59:00+03:00")
+        params = self.revision_params(logged, settled, action="ADD_CLOSING", result="loss", closing_market_snapshot=close)
+        result = asyncio.run(self.server.doctore_settle_bet(params))
+        self.assertEqual(settled.profit_loss, result.profit_loss)
+        self.assertIsNotNone(result.price_clv_pct)
+        self.assertIsNone(result.closing_missing_reason)
+        store = importlib.import_module("doctore_mcp.settlement_store")
+        self.assertEqual("No retained close", store.history()[0]["after"]["closing_missing_reason"])
+        self.assertEqual("", store.history()[1]["after"]["closing_missing_reason"])
+
+    def test_projection_failure_keeps_committed_state_and_replay_repairs(self):
+        from unittest.mock import patch
+        logged = self.log_fixture_bet()
+        params = self.server.SettleBetInput(decision_id=logged.decision_id, result="loss",
+            settled_at="2026-07-24T22:00:00+03:00", closing_missing_reason="No retained close")
+        with patch("doctore_mcp.settlement.write_bet_rows", side_effect=OSError("fixture export failure")):
+            result = asyncio.run(self.server.doctore_settle_bet(params))
+        self.assertIn("SQLite committed", result.projection_warning)
+        status = asyncio.run(self.server.doctore_portfolio_status(self.server.PortfolioStatusInput(bankroll=50000)))
+        self.assertEqual(0, status.open_bet_count)
+        self.assertEqual(1, status.settled_bet_count)
+        repaired = asyncio.run(self.server.doctore_settle_bet(params))
+        self.assertTrue(repaired.idempotent_replay)
+        self.assertIsNone(repaired.projection_warning)
+        store = importlib.import_module("doctore_mcp.settlement_store")
+        self.assertEqual(1, len(store.history()))
+
+    def test_add_closing_cannot_change_result_or_event_identity(self):
+        logged, settled = self.settled_fixture()
+        close = market_snapshot(odds=1.80, captured_at="2026-07-24T19:59:00+03:00")
+        with self.assertRaisesRegex(ValueError, "cannot change result"):
+            asyncio.run(self.server.doctore_settle_bet(self.revision_params(logged, settled,
+                action="ADD_CLOSING", closing_market_snapshot=close)))
+        close["event_id"] = "wrong-event"
+        with self.assertRaisesRegex(ValueError, "domain mismatch"):
+            asyncio.run(self.server.doctore_settle_bet(self.revision_params(logged, settled,
+                action="ADD_CLOSING", result="loss", closing_market_snapshot=close)))
+
+    def test_settlement_audit_and_state_rollback_together(self):
+        from contextlib import contextmanager
+        from unittest.mock import patch
+        store = importlib.import_module("doctore_mcp.settlement_store")
+        original = store.connect
+        @contextmanager
+        def broken_connection():
+            with original() as db:
+                class Proxy:
+                    def execute(self, statement, *args):
+                        if statement.startswith("INSERT INTO settlement_state"):
+                            raise OSError("simulated failure between audit and state")
+                        return db.execute(statement, *args)
+                    @property
+                    def in_transaction(self):
+                        return db.in_transaction
+                yield Proxy()
+        before = dict(decision_id="test", result="")
+        with patch.object(store, "connect", broken_connection):
+            with self.assertRaises(OSError):
+                store.commit(before, dict(before, result="loss"), request_id="rollback",
+                    request_sha="test", expected_token=store.token(before), audit={})
+        self.assertEqual([], store.history())
+        self.assertEqual([before], store.overlay([before]))
+
     def test_result_without_closing_data_is_idempotent_and_has_no_clv(self):
         logged = self.log_fixture_bet()
         params = self.server.SettleBetInput(

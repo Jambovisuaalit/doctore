@@ -212,3 +212,12 @@ automatically expire or release on cancellation; a later audited cancellation
 workflow is required. Mixed currencies and unreplayed placement journals block
 new approvals. External bankroll/balance/drawdown remain supplied data, requiring
 a fresh snapshot; this is not a bookmaker account synchronization service.
+## Settlement revisions and transactional authority
+
+`doctore_settle_bet` now supports explicit `revision` actions CORRECT_RESULT and
+ADD_CLOSING, with human confirmation, reviewer, source, reason, unique request ID
+and optimistic settlement hash. Settlement state and immutable audit commit in
+SQLite; CSV/JSONL are projections. See [SETTLEMENT_REVISIONS.md](../docs/SETTLEMENT_REVISIONS.md)
+for retry, migration, export and backup requirements. This supersedes the earlier
+paragraph stating that all late closing enrichment/result correction is rejected.
+Approval and placement persistence are not migrated by this change.
