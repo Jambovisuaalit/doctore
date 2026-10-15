@@ -144,6 +144,7 @@ def materialize_bullpen_group(
     feature_cutoff_at: str,
     source_records: Sequence[Mapping[str, Any]],
     eligible_rejects: Sequence[Mapping[str, Any]] = (),
+    history_universe_evidence: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Materialize one target event or fail closed with explicit reason codes."""
     event_id = str(target_event.get("event_id", "")).strip()
@@ -199,9 +200,23 @@ def materialize_bullpen_group(
             records_3d[team_id].append(record)
             contributing[source_event_id] = record
 
-    if not records_3d[away_team_id]:
+    complete_window = False
+    universe_manifest_id = ""
+    universe_manifest_sha = ""
+    if history_universe_evidence is not None:
+        universe_manifest_id = str(history_universe_evidence.get("manifest_id", "")).strip()
+        universe_manifest_sha = str(history_universe_evidence.get("manifest_sha256", "")).strip()
+        complete_window = (
+            history_universe_evidence.get("completeness_status") == "PASS"
+            and bool(universe_manifest_id)
+            and bool(SHA256_RE.fullmatch(universe_manifest_sha))
+        )
+        if not complete_window:
+            reason_codes.add("BULLPEN_HISTORY_UNIVERSE_EVIDENCE_INVALID")
+
+    if not records_3d[away_team_id] and not complete_window:
         reason_codes.add("AWAY_BULLPEN_NO_PROVEN_PRIOR_GAME_3D")
-    if not records_3d[home_team_id]:
+    if not records_3d[home_team_id] and not complete_window:
         reason_codes.add("HOME_BULLPEN_NO_PROVEN_PRIOR_GAME_3D")
 
     if reason_codes:
@@ -234,18 +249,22 @@ def materialize_bullpen_group(
         contributing.values(),
         key=lambda record: (_ts(record["final_event_at"], "final_event_at"), str(record["event_id"])),
     )
+    source_records_evidence = [
+        {
+            "event_id": str(record["event_id"]),
+            "end_at": str(record["final_event_at"]),
+            "source_sha256": str(record["source_sha256"]),
+        }
+        for record in ordered_sources
+    ]
     evidence = {
         "event_id": event_id,
         "feature_group": "bullpen",
         "feature_cutoff_at": _iso(cutoff),
-        "source_records": [
-            {
-                "event_id": str(record["event_id"]),
-                "end_at": str(record["final_event_at"]),
-                "source_sha256": str(record["source_sha256"]),
-            }
-            for record in ordered_sources
-        ],
+        "window_start_at": _iso(lower),
+        "source_records": source_records_evidence,
+        "history_universe_manifest_id": universe_manifest_id if complete_window else None,
+        "history_universe_manifest_sha256": universe_manifest_sha if complete_window else None,
     }
     evidence_sha = _canonical_sha(evidence)
     provenance = {
@@ -254,14 +273,20 @@ def materialize_bullpen_group(
         "feature_group": "bullpen",
         "source": "MLB StatsAPI normalized feature sources v1",
         "source_record_id": f"mlb-bullpen-features:{event_id}:{evidence_sha[:16]}",
-        "availability_mode": "PRIOR_EVENT_FINAL",
+        "availability_mode": "PRIOR_WINDOW_COMPLETE" if complete_window else "PRIOR_EVENT_FINAL",
         "feature_cutoff_at": _iso(cutoff),
         "source_sha256": evidence_sha,
         "source_events": [
             {"event_id": item["event_id"], "end_at": item["end_at"]}
-            for item in evidence["source_records"]
+            for item in source_records_evidence
         ],
     }
+    if complete_window:
+        provenance.update({
+            "window_start_at": _iso(lower),
+            "history_universe_manifest_id": universe_manifest_id,
+            "history_universe_manifest_sha256": universe_manifest_sha,
+        })
     return {
         "event_id": event_id,
         "feature_group": "bullpen",
