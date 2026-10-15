@@ -20,13 +20,25 @@ from .schemas import (
 
 
 def run_decision(params: DecisionInput) -> dict:
+    context = params.sport_context
+    if params.market_snapshot.get("sport") == "TENNIS":
+        from pathlib import Path
+        import os
+        from .runtime import REPO
+        context = dict(context or {})
+        # Never trust a caller-supplied registry or provider request timestamp.
+        try:
+            path = Path(os.environ.get("DOCTORE_TENNIS_IDENTITY_REGISTRY", str(REPO / "governance/tennis-identity-registry.json")))
+            context["identity_registry"] = json.loads(path.read_text())
+        except (OSError, ValueError):
+            context["identity_registry"] = {"mappings": []}
     return evaluate_bet_decision(
         model_output=params.model_output,
         market_snapshot=params.market_snapshot,
         portfolio_state=params.portfolio_state,
         risk_policy=params.risk_policy,
         evaluated_at=params.evaluated_at,
-        sport_context=params.sport_context,
+        sport_context=context,
     )
 
 

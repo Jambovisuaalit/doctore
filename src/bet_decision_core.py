@@ -217,6 +217,12 @@ def evaluate_bet_decision(
         return _finish(output, "BLOCKED", ["INPUT_SCHEMA_INVALID"], invalid)
     assert evaluated is not None
 
+    if market_snapshot["sport"] == "TENNIS":
+        from tennis_event_gate import validate_tennis_event
+        tennis_reasons = validate_tennis_event(sport_context, market_snapshot, evaluated_at)
+        if tennis_reasons:
+            return _finish(output, "BLOCKED", tennis_reasons)
+
     blocked, diagnostics = [], []
     mismatch = _domain_errors(model_output, market_snapshot)
     if mismatch:
