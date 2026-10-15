@@ -1,0 +1,103 @@
+name: MLB v4 schedule resolution probe
+
+on:
+  push:
+    branches: ['research/mlb-v4-schedule-probe-*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 1
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Resolve historical schedule ambiguities
+        shell: bash
+        run: |
+          set -euo pipefail
+          PYTHONPATH=src python - <<'PY'
+          import json
+          from urllib.request import Request, urlopen
+
+          from mlb_v2_schedule_resolution import normalize_schedule_games_v3
+          from mlb_v2_schedule_resolution_v4 import normalize_schedule_games_v4, hydrate_schedule_candidate_v4
+          from mlb_v2_source_acquisition import ScheduleResolutionError
+
+          def get_json(url):
+              req=Request(url, headers={'User-Agent':'Doctore-Sports/1.0 schedule-probe','Accept':'application/json'})
+              with urlopen(req, timeout=60) as r:
+                  return json.load(r)
+
+          out={'schema_version':'doctore.mlb-v4-schedule-probe.v1','seasons':{},'cases':[]}
+          for season in range(2012, 2022):
+              schedule=get_json(f'https://statsapi.mlb.com/api/v1/schedule?sportId=1&season={season}&gameType=R')
+              _, v3_exclusions, v3_stats=normalize_schedule_games_v3(schedule, season)
+              v4_games, v4_exclusions, v4_stats=normalize_schedule_games_v4(schedule, season)
+              targets={
+                  int(x['game_pk']): x for x in v3_exclusions
+                  if x.get('reason') in {'DUPLICATE_STRICT_FINAL_CONFLICT','NO_STRICT_PLAYED_FINAL_ROW'}
+                  and x.get('game_pk') is not None
+              }
+              v4_by_pk={int(x['game_pk']):x for x in v4_games if int(x['game_pk']) in targets}
+              v4_ex_by_pk={int(x['game_pk']):x for x in v4_exclusions if x.get('game_pk') is not None and int(x['game_pk']) in targets}
+              season_cases=[]
+              for game_pk, original in sorted(targets.items()):
+                  candidate=v4_by_pk.get(game_pk)
+                  case={'season':season,'game_pk':game_pk,'v3_reason':original.get('reason')}
+                  if candidate is None:
+                      case['result']='V4_STILL_BLOCKED_AT_SCHEDULE'
+                      case['v4_reason']=(v4_ex_by_pk.get(game_pk) or {}).get('reason')
+                  else:
+                      case['resolution_kind']=candidate.get('schedule_resolution_kind') or candidate.get('schedule_revision_resolution')
+                      live=get_json(f'https://statsapi.mlb.com/api/v1.1/game/{game_pk}/feed/live')
+                      status=(live.get('gameData') or {}).get('status') or {}
+                      case['live_status_code']=status.get('statusCode') or status.get('codedGameState')
+                      case['live_detailed_state']=status.get('detailedState')
+                      try:
+                          resolved=hydrate_schedule_candidate_v4(candidate, live)
+                      except ScheduleResolutionError as exc:
+                          case['result']='DOMAIN_EXCLUSION' if exc.code in {'COMPLETED_EARLY_DOMAIN','NON_NINE_INNING_DOMAIN'} else 'BLOCKED'
+                          case['resolution_code']=exc.code
+                          case['resolution_detail']=exc.detail
+                      else:
+                          case['result']='CANONICAL'
+                          case['official_date']=resolved.get('official_date')
+                          case['event_start_at']=resolved.get('event_start_at')
+                          case['venue_id']=resolved.get('venue_id')
+                          case['away_score']=resolved.get('away_score')
+                          case['home_score']=resolved.get('home_score')
+                          case['scheduled_innings']=resolved.get('scheduled_innings')
+                  season_cases.append(case)
+                  out['cases'].append(case)
+              out['seasons'][str(season)]={
+                  'v3_strict_final_conflicts':v3_stats.get('strict_final_conflicts',0),
+                  'v3_unresolved':v3_stats.get('unresolved_no_strict_played_final',0),
+                  'v4_strict_final_conflicts':v4_stats.get('strict_final_conflicts',0),
+                  'v4_unresolved':v4_stats.get('unresolved_no_strict_played_final',0),
+                  'v4_revision_candidates':v4_stats.get('schedule_revision_hydration_candidates',0),
+                  'v4_unresolved_candidates':v4_stats.get('unresolved_schedule_hydration_candidates',0),
+                  'case_count':len(season_cases),
+              }
+          counts={}
+          for case in out['cases']:
+              counts[case['result']]=counts.get(case['result'],0)+1
+          out['result_counts']=counts
+          with open('mlb-v4-schedule-resolution-probe.json','w') as f:
+              json.dump(out,f,indent=2,sort_keys=True)
+          print(json.dumps(out,indent=2,sort_keys=True))
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mlb-v4-schedule-resolution-probe-${{ github.sha }}
+          path: mlb-v4-schedule-resolution-probe.json
+          if-no-files-found: error
+          retention-days: 30
