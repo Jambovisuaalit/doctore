@@ -40,10 +40,19 @@ def validate_tennis_event(context, market, evaluated_at):
         start = _time(event["event_start_at"])
         if start != _time(market["event_start_at"]) or now >= start:
             return ["TENNIS_EVENT_IDENTITY_MISMATCH"]
-        # A request timestamp never substitutes for a provider event update.
-        if not event.get("source_updated_at"):
+        # Snapshot generation and event modification are separate concepts.
+        if event.get("freshness_basis") == "provider_generated_at":
+            if event.get("source") != "sportradar":
+                return ["TENNIS_EVENT_FRESHNESS_UNVERIFIED"]
+            digest = event.get("source_snapshot_sha256", "")
+            if not isinstance(digest, str) or len(digest) != 64 or any(c not in "0123456789abcdef" for c in digest):
+                return ["TENNIS_EVENT_FRESHNESS_UNVERIFIED"]
+            freshness_at = event.get("provider_generated_at")
+        else:
+            freshness_at = event.get("source_updated_at")
+        if not freshness_at:
             return ["TENNIS_EVENT_FRESHNESS_UNVERIFIED"]
-        updated, received = _time(event["source_updated_at"]), _time(event["received_at"])
+        updated, received = _time(freshness_at), _time(event["received_at"])
         if not (updated <= received <= now) or (now-updated).total_seconds() > 120:
             return ["TENNIS_EVENT_STALE"]
         if not mapping.get("valid_until") or _time(mapping["valid_until"]) < now:

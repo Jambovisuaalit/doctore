@@ -221,3 +221,13 @@ SQLite; CSV/JSONL are projections. See [SETTLEMENT_REVISIONS.md](../docs/SETTLEM
 for retry, migration, export and backup requirements. This supersedes the earlier
 paragraph stating that all late closing enrichment/result correction is rejected.
 Approval and placement persistence are not migrated by this change.
+
+## Server-owned tennis source verification
+
+Tennis evaluation ignores caller-supplied event timestamps. Use the explicit
+Sportradar acquisition command in [TENNIS_EVENT_GATE.md](../docs/TENNIS_EVENT_GATE.md)
+to store authenticated provider summary bytes against a reviewed exact mapping.
+Evaluation revalidates those bytes offline. Snapshot `generated_at` and event
+last-change time are distinct; no request timestamp proves source freshness.
+An existing entitled API key, explicit access level and real reviewed bookmaker
+mapping are external prerequisites. No account, subscription or model is created.

@@ -63,5 +63,5 @@ class TennisIdentityTests(unittest.TestCase):
                 self.assertEqual([], schema_errors("decision", output))
                 params.sport_context = self.context
                 output = run_decision(params)
-                self.assertEqual(["TENNIS_IDENTITY_UNVERIFIED"], output["reason_codes"])
+                self.assertEqual(["TENNIS_EVENT_EVIDENCE_MISSING"], output["reason_codes"])
                 self.assertIsNone(output["staking"]["final_stake"])
