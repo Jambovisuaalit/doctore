@@ -170,6 +170,35 @@ def validate_market_governance(
             reasons.append("ARTIFACT_HASH_MISMATCH")
         governance["artifact_actual_sha256"] = artifact_sha
 
+        # Registry labels and calibration_status alone are never production evidence.
+        evidence_path = manifest.get("evidence_report_path")
+        evidence_hash = manifest.get("evidence_report_sha256")
+        if not evidence_path or not evidence_hash:
+            reasons.append("MODEL_EVIDENCE_REQUIRED")
+        else:
+            from src.model_evidence import verify_report
+            try:
+                report_path = resolve_artifact_path(evidence_path)
+                evidence_manifest = dict(manifest)
+                evidence_manifest["evidence_csv_path"] = str(resolve_artifact_path(manifest["evidence_csv_path"]))
+                model_file = resolve_artifact_path(manifest["model_artifact_path"])
+                if file_sha256(model_file) != manifest.get("model_artifact_sha256"):
+                    raise ValueError("trained model artifact hash mismatch")
+                prediction = _load_json(artifact_path)
+                identity = prediction.get("model", prediction)
+                for key in ("model_name", "model_version"):
+                    if identity.get(key) != manifest.get(key):
+                        raise ValueError("prediction model identity mismatch")
+                if identity.get("model_artifact_sha256") != manifest.get("model_artifact_sha256"):
+                    raise ValueError("prediction trained-model hash mismatch")
+                report = verify_report(report_path, evidence_hash, evidence_manifest,
+                    dict(market_snapshot, sport=sport, competition=competition, target_market=target_market))
+                governance["model_evidence"] = {"report_sha256": evidence_hash,
+                    "status": report["status"], "sample_size": report["sample_size"]}
+            except (OSError, ValueError, KeyError, TypeError, AttributeError, OverflowError) as exc:
+                reasons.append("MODEL_EVIDENCE_INVALID")
+                governance["model_evidence_error"] = str(exc)
+
     except (OSError, ValueError, json.JSONDecodeError) as exc:
         reasons.append("GOVERNANCE_REGISTRY_INVALID")
         governance["error"] = str(exc)

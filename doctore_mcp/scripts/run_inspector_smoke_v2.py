@@ -10,7 +10,7 @@ P0 verification target:
 from __future__ import annotations
 
 import argparse
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 import json
 from pathlib import Path
 import runpy
@@ -94,7 +94,13 @@ def main() -> int:
     market = transport_fixture(fixtures["market_snapshot"]())
     portfolio = transport_fixture(fixtures["portfolio_state"]())
     policy = transport_fixture(fixtures["risk_policy"]())
-    evaluated_at = "2026-07-24T11:00:00+03:00"
+    now = datetime.now(timezone.utc) - timedelta(seconds=2)
+    model["prediction_generated_at"] = (now - timedelta(minutes=15)).isoformat()
+    model["feature_cutoff_at"] = (now - timedelta(minutes=20)).isoformat()
+    market["captured_at"] = (now - timedelta(seconds=30)).isoformat()
+    market["event_start_at"] = (now + timedelta(hours=9)).isoformat()
+    portfolio["captured_at"] = now.isoformat()
+    evaluated_at = now.isoformat()
     evaluation = {
         "model_output": model,
         "market_snapshot": market,
@@ -280,12 +286,13 @@ def main() -> int:
         _run(base, method="tools/call", tool="doctore_confirm_placement", params={
             "decision_id": decision["decision_id"], "placement_confirmed": True,
             "actual_stake": decision["staking"]["final_stake"], "actual_odds": market["decimal_odds"],
-            "placed_at": "2026-07-24T11:01:00+03:00", "bookmaker_reference": "synthetic-inspector-receipt",
+            "placed_at": now.isoformat(), "bookmaker_reference": "synthetic-inspector-receipt",
         })
         closing = fixtures["market_snapshot"](
             odds=1.80,
-            captured_at="2026-07-24T19:59:00+03:00",
+            captured_at=(now + timedelta(hours=9) - timedelta(minutes=1)).isoformat(),
         )
+        closing["event_start_at"] = market["event_start_at"]
         _run(
             base,
             method="tools/call",
@@ -294,7 +301,7 @@ def main() -> int:
                 "decision_id": decision["decision_id"],
                 "closing_market_snapshot": closing,
                 "result": "win",
-                "settled_at": "2026-07-24T22:00:00+03:00",
+                "settled_at": (now + timedelta(hours=11)).isoformat(),
             },
         )
         _run(

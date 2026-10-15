@@ -80,3 +80,12 @@ Bundles are appended to JSONL and never rewritten by the orchestrator.
 - `DOCTORE_MODEL_MANIFEST_REGISTRY`
 - `DOCTORE_ALLOWED_DOMAIN_MATRIX`
 - `DOCTORE_DECISION_BUNDLE_LOG`
+
+## Production evidence requirement
+
+The registry examples above illustrate identity fields only and are insufficient
+for admission. Every model now also needs the recomputable OOS report, trained
+model hash, exact domain and explicit evidence review described in
+[MODEL_EVIDENCE.md](MODEL_EVIDENCE.md). Missing evidence returns
+`MODEL_EVIDENCE_REQUIRED`, even when artifact status is APPROVED. Statistical
+qualification is never automatic production approval.

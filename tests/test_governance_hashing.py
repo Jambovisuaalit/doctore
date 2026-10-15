@@ -108,12 +108,12 @@ class GovernanceArtifactHashingTests(unittest.TestCase):
         self.assertEqual(expected, file_sha256(self.artifact))
         self.assertNotEqual(expected, content_sha256(raw.hex()))
 
-    def test_governance_accepts_registry_with_raw_file_sha256(self) -> None:
+    def test_valid_hash_alone_cannot_admit_model_without_evidence(self) -> None:
         expected = hashlib.sha256(self.artifact.read_bytes()).hexdigest()
         self._write_registries(expected)
         result = self._validate()
-        self.assertTrue(result.ok, msg=result.reason_codes)
-        self.assertEqual([], result.reason_codes)
+        self.assertFalse(result.ok)
+        self.assertEqual(["MODEL_EVIDENCE_REQUIRED"], result.reason_codes)
         self.assertEqual(expected, result.governance["artifact_actual_sha256"])
 
     def test_legacy_hex_json_hash_is_rejected(self) -> None:
