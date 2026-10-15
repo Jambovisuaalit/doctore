@@ -19,7 +19,7 @@ import acquire_mlb_v2_sources as base
 from mlb_v2_schedule_resolution_v4 import normalize_schedule_games_v4, hydrate_schedule_candidate_v4
 from mlb_v2_source_acquisition import ScheduleResolutionError, canonical_bytes, sha256_bytes
 from mlb_v4_bullpen_history import BullpenHistorySupplementError, authoritative_played_domain_game
-from mlb_v4_offense_history import OffenseHistoryError, normalize_offense_history_source
+from mlb_v4_offense_history import OffenseHistoryError, normalize_offense_history_source, write_sha256_sidecar
 
 PLAYED_SCHEDULE_EXCLUSION_REASONS={"NON_NINE_INNING_DOMAIN","COMPLETED_EARLY_DOMAIN"}
 
