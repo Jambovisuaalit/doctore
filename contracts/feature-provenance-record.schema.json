@@ -15,71 +15,190 @@
     "source_sha256"
   ],
   "properties": {
-    "schema_version": {"const": "doctore.feature-provenance.v1"},
-    "event_id": {"type": "string", "minLength": 1},
-    "feature_group": {"enum": ["baseline", "starter", "bullpen", "park", "weather"]},
-    "source": {"type": "string", "minLength": 1},
-    "source_record_id": {"type": "string", "minLength": 1},
+    "schema_version": {
+      "const": "doctore.feature-provenance.v1"
+    },
+    "event_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "feature_group": {
+      "enum": [
+        "baseline",
+        "starter",
+        "bullpen",
+        "park",
+        "weather"
+      ]
+    },
+    "source": {
+      "type": "string",
+      "minLength": 1
+    },
+    "source_record_id": {
+      "type": "string",
+      "minLength": 1
+    },
     "availability_mode": {
       "enum": [
         "PRIOR_EVENT_FINAL",
         "AGGREGATE_PRIOR_EVENT_FINAL",
+        "PRIOR_WINDOW_COMPLETE",
         "PREGAME_SNAPSHOT",
         "FORECAST_RUN",
         "STATIC_KNOWN_BEFORE_CUTOFF"
       ]
     },
-    "feature_cutoff_at": {"type": "string", "format": "date-time"},
-    "source_sha256": {"$ref": "#/$defs/sha256"},
-    "source_event_id": {"type": "string", "minLength": 1},
-    "source_event_end_at": {"type": "string", "format": "date-time"},
+    "feature_cutoff_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "source_sha256": {
+      "$ref": "#/$defs/sha256"
+    },
+    "source_event_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "source_event_end_at": {
+      "type": "string",
+      "format": "date-time"
+    },
     "source_events": {
       "type": "array",
-      "minItems": 1,
+      "minItems": 0,
       "items": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["event_id", "end_at"],
+        "required": [
+          "event_id",
+          "end_at"
+        ],
         "properties": {
-          "event_id": {"type": "string", "minLength": 1},
-          "end_at": {"type": "string", "format": "date-time"}
+          "event_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "end_at": {
+            "type": "string",
+            "format": "date-time"
+          }
         }
       }
     },
-    "contributor_manifest_id": {"type": "string", "minLength": 1},
-    "contributor_manifest_sha256": {"$ref": "#/$defs/sha256"},
-    "aggregate_artifact_sha256": {"$ref": "#/$defs/sha256"},
-    "contributor_count": {"type": "integer", "minimum": 1},
-    "latest_contributor_end_at": {"type": "string", "format": "date-time"},
-    "derivation_version": {"type": "string", "minLength": 1},
-    "observed_at": {"type": "string", "format": "date-time"},
-    "forecast_issued_at": {"type": "string", "format": "date-time"},
-    "forecast_target_at": {"type": "string", "format": "date-time"},
-    "effective_at": {"type": "string", "format": "date-time"}
+    "contributor_manifest_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "contributor_manifest_sha256": {
+      "$ref": "#/$defs/sha256"
+    },
+    "aggregate_artifact_sha256": {
+      "$ref": "#/$defs/sha256"
+    },
+    "contributor_count": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "latest_contributor_end_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "derivation_version": {
+      "type": "string",
+      "minLength": 1
+    },
+    "observed_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "forecast_issued_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "forecast_target_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "effective_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "window_start_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "history_universe_manifest_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "history_universe_manifest_sha256": {
+      "$ref": "#/$defs/sha256"
+    }
   },
   "allOf": [
     {
-      "if": {"properties": {"availability_mode": {"const": "PRIOR_EVENT_FINAL"}}, "required": ["availability_mode"]},
+      "if": {
+        "properties": {
+          "availability_mode": {
+            "const": "PRIOR_EVENT_FINAL"
+          }
+        },
+        "required": [
+          "availability_mode"
+        ]
+      },
       "then": {
         "oneOf": [
           {
-            "required": ["source_events"],
+            "required": [
+              "source_events"
+            ],
             "not": {
               "anyOf": [
-                {"required": ["source_event_id"]},
-                {"required": ["source_event_end_at"]}
+                {
+                  "required": [
+                    "source_event_id"
+                  ]
+                },
+                {
+                  "required": [
+                    "source_event_end_at"
+                  ]
+                }
               ]
+            },
+            "properties": {
+              "source_events": {
+                "minItems": 1
+              }
             }
           },
           {
-            "required": ["source_event_id", "source_event_end_at"],
-            "not": {"required": ["source_events"]}
+            "required": [
+              "source_event_id",
+              "source_event_end_at"
+            ],
+            "not": {
+              "required": [
+                "source_events"
+              ]
+            }
           }
         ]
       }
     },
     {
-      "if": {"properties": {"availability_mode": {"const": "AGGREGATE_PRIOR_EVENT_FINAL"}}, "required": ["availability_mode"]},
+      "if": {
+        "properties": {
+          "availability_mode": {
+            "const": "AGGREGATE_PRIOR_EVENT_FINAL"
+          }
+        },
+        "required": [
+          "availability_mode"
+        ]
+      },
       "then": {
         "required": [
           "contributor_manifest_id",
@@ -91,24 +210,111 @@
         ],
         "not": {
           "anyOf": [
-            {"required": ["source_event_id"]},
-            {"required": ["source_event_end_at"]},
-            {"required": ["source_events"]}
+            {
+              "required": [
+                "source_event_id"
+              ]
+            },
+            {
+              "required": [
+                "source_event_end_at"
+              ]
+            },
+            {
+              "required": [
+                "source_events"
+              ]
+            }
           ]
         }
       }
     },
     {
-      "if": {"properties": {"availability_mode": {"const": "PREGAME_SNAPSHOT"}}, "required": ["availability_mode"]},
-      "then": {"required": ["observed_at"]}
+      "if": {
+        "properties": {
+          "availability_mode": {
+            "const": "PRIOR_WINDOW_COMPLETE"
+          }
+        },
+        "required": [
+          "availability_mode"
+        ]
+      },
+      "then": {
+        "required": [
+          "window_start_at",
+          "history_universe_manifest_id",
+          "history_universe_manifest_sha256",
+          "source_events"
+        ],
+        "not": {
+          "anyOf": [
+            {
+              "required": [
+                "source_event_id"
+              ]
+            },
+            {
+              "required": [
+                "source_event_end_at"
+              ]
+            }
+          ]
+        }
+      }
     },
     {
-      "if": {"properties": {"availability_mode": {"const": "FORECAST_RUN"}}, "required": ["availability_mode"]},
-      "then": {"required": ["forecast_issued_at", "forecast_target_at"]}
+      "if": {
+        "properties": {
+          "availability_mode": {
+            "const": "PREGAME_SNAPSHOT"
+          }
+        },
+        "required": [
+          "availability_mode"
+        ]
+      },
+      "then": {
+        "required": [
+          "observed_at"
+        ]
+      }
     },
     {
-      "if": {"properties": {"availability_mode": {"const": "STATIC_KNOWN_BEFORE_CUTOFF"}}, "required": ["availability_mode"]},
-      "then": {"required": ["observed_at", "effective_at"]}
+      "if": {
+        "properties": {
+          "availability_mode": {
+            "const": "FORECAST_RUN"
+          }
+        },
+        "required": [
+          "availability_mode"
+        ]
+      },
+      "then": {
+        "required": [
+          "forecast_issued_at",
+          "forecast_target_at"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "availability_mode": {
+            "const": "STATIC_KNOWN_BEFORE_CUTOFF"
+          }
+        },
+        "required": [
+          "availability_mode"
+        ]
+      },
+      "then": {
+        "required": [
+          "observed_at",
+          "effective_at"
+        ]
+      }
     }
   ],
   "$defs": {
