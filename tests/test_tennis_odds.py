@@ -2,7 +2,7 @@
 from copy import deepcopy
 from datetime import datetime, timezone
 import unittest
-from unittest.mock import patch
+from unittest.mock import patch, Mock
 from doctore_mcp.tennis_odds import import_quotes, compare_quotes, decimal_price, fetch_once, OddsError
 from doctore_mcp.tennis_data import TennisDataInput, fetch_tennis_data
 
@@ -95,7 +95,10 @@ class TennisOddsTests(unittest.TestCase):
             self.assertFalse(result.recommendation_available)
 
     def test_credit_guard_prevents_network_and_transport_errors_are_redacted(self):
-        with patch("doctore_mcp.tennis_odds.build_opener") as opener:
+        # Other repository tests reload modules. Patch this function's own
+        # globals so a stale imported function can never escape the mock.
+        opener = Mock()
+        with patch.dict(fetch_once.__globals__, build_opener=opener):
             with self.assertRaisesRegex(OddsError,"CREDIT_APPROVAL_REQUIRED"): fetch_once("tennis_atp_example")
             opener.assert_not_called()
             with patch.dict("os.environ",{"ODDS_API_KEY":"synthetic-secret"}):
