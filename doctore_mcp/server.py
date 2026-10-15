@@ -16,6 +16,8 @@ from doctore_mcp.context_agents import (  # noqa: E402,F401
     ContextGateOutput,
 )
 from doctore_mcp.schemas import (  # noqa: E402,F401
+    ConfirmPlacementInput,
+    ConfirmPlacementOutput,
     DecisionInput,
     EdgeAndStakeOutput,
     EvaluateOutput,
@@ -36,6 +38,7 @@ from doctore_mcp.schemas import (  # noqa: E402,F401
     Sport,
 )
 from doctore_mcp.tools import (  # noqa: E402,F401
+    doctore_confirm_placement,
     doctore_calculate_edge_and_stake,
     doctore_check_data_quality,
     doctore_evaluate_bet,

@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Run the shared smoke cases through the official Python MCP stdio client.
 
-No npm, sports-data API calls or persistent user state is needed. The optional
-sports-skills dependency must be absent, matching the Inspector CI environment.
+No npm, sports-data API calls or persistent user state is needed. Tennis network
+access is explicitly disabled, matching the Inspector CI environment.
 """
 from __future__ import annotations
 

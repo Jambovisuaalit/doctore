@@ -2,8 +2,8 @@
 """Run all exposed Doctore MCP tools through Inspector over stdio.
 
 P0 verification target:
-- all 11 currently exposed tools must be listed;
-- all 11 tools must accept a real stdio tools/call request;
+- all 12 currently exposed tools must be listed;
+- all 12 tools must accept a real stdio tools/call request;
 - context-gate and slate-orchestrator calls must also return their expected
   fail-closed semantic markers.
 """
@@ -14,6 +14,7 @@ from datetime import datetime, timezone
 import json
 from pathlib import Path
 import runpy
+import re
 import subprocess
 import sys
 import tempfile
@@ -31,6 +32,7 @@ EXPECTED_TOOLS = {
     "doctore_portfolio_status",
     "doctore_run_slate",
     "doctore_tennis_data",
+    "doctore_confirm_placement",
 }
 
 
@@ -58,7 +60,7 @@ def _run(
         timeout=180,
     )
     output = (completed.stdout + "\n" + completed.stderr).strip()
-    if completed.returncode != 0:
+    if completed.returncode != 0 or re.search(r'"isError"\s*:\s*true', completed.stdout):
         raise RuntimeError(f"Inspector failed for {tool or method}:\n{output}")
     print(f"PASS {tool or method}")
     return output
@@ -77,14 +79,21 @@ def main() -> int:
         default=Path(__file__).resolve().parents[2],
     )
     parser.add_argument("--python", default=sys.executable)
+    parser.add_argument("--inspector-offline", action="store_true", help="Use the locally cached pinned npm package")
     args = parser.parse_args()
     repo = args.repo.resolve()
 
     fixtures = runpy.run_path(str(repo / "tests" / "test_doctore_mcp.py"))
-    model = fixtures["model_output"]()
-    market = fixtures["market_snapshot"]()
-    portfolio = fixtures["portfolio_state"]()
-    policy = fixtures["risk_policy"]()
+    # Inspector serializes JSON through JavaScript, where 1.0 becomes 1.
+    # Compute hashes from the exact transported fixture rather than an
+    # out-of-band Python numeric representation.
+    def transport_fixture(value):
+        return json.loads(json.dumps(value), parse_float=lambda text: (
+            int(float(text)) if float(text).is_integer() else float(text)))
+    model = transport_fixture(fixtures["model_output"]())
+    market = transport_fixture(fixtures["market_snapshot"]())
+    portfolio = transport_fixture(fixtures["portfolio_state"]())
+    policy = transport_fixture(fixtures["risk_policy"]())
     evaluated_at = "2026-07-24T11:00:00+03:00"
     evaluation = {
         "model_output": model,
@@ -151,6 +160,7 @@ def main() -> int:
         base = [
             "npx",
             "--yes",
+            *(["--offline"] if args.inspector_offline else []),
             INSPECTOR_PACKAGE,
             "--cli",
             "-e",
@@ -159,6 +169,8 @@ def main() -> int:
             f"DOCTORE_BET_LOG={bet_log}",
             "-e",
             f"DOCTORE_MODEL_ARTIFACT_ROOT={temp}",
+            "-e",
+            "DOCTORE_TENNIS_OFFLINE=1",
             args.python,
             str(server_path),
         ]
@@ -252,7 +264,7 @@ def main() -> int:
             "doctore_run_context_gate",
         )
 
-        _run(
+        log_output = _run(
             base,
             method="tools/call",
             tool="doctore_log_bet",
@@ -263,6 +275,13 @@ def main() -> int:
                 "approved_stake": None,
             },
         )
+        if not re.search(r'"logged"\s*:\s*true', log_output):
+            raise RuntimeError("Approval was not persisted: " + log_output)
+        _run(base, method="tools/call", tool="doctore_confirm_placement", params={
+            "decision_id": decision["decision_id"], "placement_confirmed": True,
+            "actual_stake": decision["staking"]["final_stake"], "actual_odds": market["decimal_odds"],
+            "placed_at": "2026-07-24T11:01:00+03:00", "bookmaker_reference": "synthetic-inspector-receipt",
+        })
         closing = fixtures["market_snapshot"](
             odds=1.80,
             captured_at="2026-07-24T19:59:00+03:00",
@@ -320,7 +339,7 @@ def main() -> int:
 
         tennis_output = _run(base, method="tools/call", tool="doctore_tennis_data",
                              params={"command": "get_scoreboard", "tour": "atp"})
-        _require_marker(tennis_output, "TENNIS_PROVIDER_NOT_INSTALLED", "optional tennis dependency")
+        _require_marker(tennis_output, "TENNIS_NETWORK_DISABLED", "offline tennis gate")
 
         print(
             f"Inspector smoke suite passed: {len(EXPECTED_TOOLS)}/"

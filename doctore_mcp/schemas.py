@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from datetime import date
 from enum import Enum
-from typing import Any, Mapping, Optional
+from typing import Any, Literal, Mapping, Optional
 import json
 
 from jsonschema import Draft202012Validator, FormatChecker
@@ -141,11 +141,32 @@ class LogBetInput(BaseModel):
 
 
 class LogBetOutput(BaseModel):
+    placement_status: Optional[str] = None
     logged: bool
     decision_id: str
     approved_stake: Optional[float]
     reason: Optional[str] = None
     log_path: str
+
+
+class ConfirmPlacementInput(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True, allow_inf_nan=False)
+    decision_id: str = Field(..., pattern=r"^[a-f0-9]{64}$")
+    placement_confirmed: Literal[True]
+    actual_stake: float = Field(..., gt=0)
+    actual_odds: float = Field(..., gt=1)
+    placed_at: str
+    bookmaker_reference: str = Field(..., min_length=1)
+
+
+class ConfirmPlacementOutput(BaseModel):
+    confirmed: bool
+    idempotent_replay: bool
+    decision_id: str
+    actual_stake: float
+    actual_odds: float
+    placement_sha256: str
+    policy_warnings: list[str]
 
 
 class SettlementResult(str, Enum):
@@ -186,6 +207,9 @@ class PortfolioStatusInput(BaseModel):
 
 
 class PortfolioStatusOutput(BaseModel):
+    pending_approval_count: int = 0
+    approved_unplaced_amount: float = 0
+    legacy_unconfirmed_count: int = 0
     open_bet_count: int
     open_exposure: float
     exposure_pct_of_bankroll: float

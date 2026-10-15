@@ -139,3 +139,18 @@ Additive `doctore_tennis_data` exposes four reviewed provider operations with an
 explicit tour. Provider dependency is optional and absence returns BLOCKED.
 The repo already exposed context-gate and slate tools before this change; total
 exposed tools after this addition is eleven, rather than the historical eight.
+
+## Approval/placement separation (follow-up)
+
+Intentional breaking behavior: `doctore_log_bet` records approval, no longer
+asserting a placed bet or actual exposure. Slate status is now
+`APPROVED_AWAITING_PLACEMENT`. Additive write tool `doctore_confirm_placement`
+records explicitly confirmed actual stake/odds/time/receipt and immutable facts.
+Settlement rejects unconfirmed records and uses actual execution values.
+Portfolio distinguishes pending approval and legacy uncertainty; old open
+ledger rows retain conservative exposure until explicit confirmation/migration.
+Confirmation records over-approval/worse-price facts with policy warnings; it
+never retroactively authorizes the deviation. Total tools: twelve.
+
+Tennis source calls now have bounded process lifetimes and HTTPS athlete-ref
+normalization; `DOCTORE_TENNIS_OFFLINE=1` explicitly disables source access.

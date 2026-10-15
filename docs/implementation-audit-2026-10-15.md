@@ -37,15 +37,12 @@ for GhoulHouse-Dev/the-odds-dropper. Its actual payload and deployment cannot be
 verified. Therefore P3 integration is blocked; no substitute payload contract
 was invented.
 
-P2 source adapter is implemented and tested with fake provider responses. The
-optional provider is not installed in the standard smoke environment and no
-live ESPN query has been verified. Strict source/entity mapping is still needed
+P2 source adapter is implemented, fixture-tested and live-tested as described
+below. Network is disabled explicitly during standard smoke tests.
+Strict source/entity mapping is still needed
 before joining tennis profiles to bookmaker events, especially doubles.
 
 Broader brief items not completed by these patches:
-- Separate approval from actual-placement confirmation and record actual odds,
-  stake, bookmaker receipt, and placement time as distinct immutable events.
-  Existing logging persists approved decision values.
 - Recheck current wall-clock executable price and portfolio at actual placement;
   deterministic historical evaluations remain supported by the current API.
 - Explicit revision/audit workflow for corrected settlements and later closing
@@ -67,3 +64,56 @@ Broader brief items not completed by these patches:
 
 The runtime environment first lacked dependencies; those failed setup runs are
 not product regressions. See the PR validation results for completed checks.
+
+## Completed follow-up: approval and actual placement
+
+`doctore_log_bet` now records APPROVED, awaiting actual placement; the slate
+orchestrator reports APPROVED_AWAITING_PLACEMENT. The separate
+`doctore_confirm_placement` tool requires explicit confirmation, actual stake,
+actual odds, a timezone-aware placement time and bookmaker reference. It never
+contacts a bookmaker. Original approved stake/odds remain in the state.
+
+Only confirmed bets contribute to actual exposure and can be settled. Pending
+approvals have separate count/amount metrics. Historical open rows are marked
+LEGACY_UNCONFIRMED and retain conservative exposure, without inventing proof of
+placement. Actual excess stake or worse odds are recorded with warnings, rather
+than hiding already-incurred liability. P/L and CLV use actual execution values.
+
+The placement JSONL is written and fsynced before atomic CSV replacement, under
+the shared lock. Same-fact replay repairs an interrupted state write; conflicting
+facts or duplicate bookmaker references are rejected. This does not replace the
+remaining settlement revision and cross-file transaction work.
+
+## Completed follow-up: explicit live source checks
+
+Pinned sports-skills source was installed in the test environment. Live HTTP
+reads on 2026-10-15 returned these successful source results:
+
+| UTC request time | Operation | Tour | Observed result |
+|---|---|---|---|
+| 00:38:34 | get_scoreboard | ATP | 1 tournament |
+| 00:37:27 | get_scoreboard | WTA | 4 tournaments |
+| 00:38:36 | get_rankings | ATP | 3 entries, names and IDs present |
+| 00:38:37 | get_rankings | WTA | 3 entries, names and IDs present |
+| 00:37:06 | get_calendar | ATP | 60 tournaments |
+| 00:37:07 | get_player_info | ATP scope | ESPN id 3623 returned a named player profile |
+
+The profile endpoint has no tour filter, so ATP scope is not proof of tour
+membership. Neither transport success nor counts prove current match freshness
+or complete historical data. `source_updated_at=null` and
+`event_freshness_verified=false` remain explicit. WTA calendar/profile calls were
+not separately verified.
+
+Earlier attempts encountered timeouts and an ATP scoreboard HTTP 502. The
+adapter now upgrades provider-published HTTP athlete references to the same
+HTTPS resources in a disposable process, caps each request at ten seconds with
+no retry, and enforces a 45-second total deadline. A source failure returns
+BLOCKED and no substitute event/model data. Ranking entries missing names/IDs
+also fail closed. `verify_tennis_live.py` reproduces explicit source checks;
+live calls are not part of CI or the deterministic smoke suite.
+
+The Inspector runner now checks protocol errors and actual logged=true, rather
+than equating a successful tools/call transport with persisted approval.
+Its locally computed fixture hashes use the same integral numeric representation
+as the JavaScript CLI transport. Use --inspector-offline when the pinned npm
+package is cached; a registry 403 is an environment failure, not MCP evidence.

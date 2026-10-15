@@ -101,6 +101,8 @@ def settle_bet(params: SettleBetInput) -> SettleBetOutput:
             raise ValueError(f"expected exactly one logged row for {params.decision_id}; found {len(indexes)}")
         index = indexes[0]
         row = rows[index]
+        if row["placement_status"] != "PLACED":
+            raise ValueError("actual placement must be confirmed before settlement")
         # New records bind timing to the original market, not caller-supplied closing data.
         event_start = row.get("event_start_at")
         if snapshot is not None:
@@ -110,8 +112,12 @@ def settle_bet(params: SettleBetInput) -> SettleBetOutput:
             if mismatches:
                 raise ValueError("closing snapshot domain mismatch: " + ", ".join(mismatches))
             event_start = event_start or snapshot["event_start_at"]
+        if snapshot is not None and parse_time(snapshot["captured_at"]) < parse_time(row["placed_at"]):
+            raise ValueError("closing snapshot cannot precede actual placement")
         if not event_start:
             raise ValueError("legacy bet lacks event_start_at; provide exact-domain closing data")
+        if parse_time(settled_at) < parse_time(row["placed_at"]):
+            raise ValueError("settled_at cannot be before actual placement")
         if parse_time(settled_at) < parse_time(event_start):
             raise ValueError("settled_at cannot be before event start")
 
@@ -137,7 +143,7 @@ def settle_bet(params: SettleBetInput) -> SettleBetOutput:
 
         odds_taken = float(row["odds_taken"])
         no_vig_at_bet = float(row["market_no_vig_at_bet"])
-        approved_stake = float(row["approved_stake"])
+        approved_stake = float(row["actual_stake"])
         price_clv = odds_taken / closing_odds - 1 if closing_odds is not None else None
         probability_clv = closing_fair - no_vig_at_bet if closing_fair is not None else None
         pnl = profit_loss(params.result, approved_stake, odds_taken)

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from contextlib import contextmanager
+from datetime import datetime, timezone
 from typing import Any, Iterator
 import csv
 import json
@@ -9,8 +10,10 @@ import os
 import tempfile
 
 from .decision_adapter import run_decision
-from .runtime import BET_LOG_PATH, content_sha256, now_iso
+from .runtime import BET_LOG_PATH, content_sha256, now_iso, parse_time
 from .schemas import (
+    ConfirmPlacementInput,
+    ConfirmPlacementOutput,
     HumanDecision,
     LogBetInput,
     LogBetOutput,
@@ -29,6 +32,14 @@ BET_LOG_FIELDS = [
     "closing_no_vig_probability", "price_clv_pct", "clv_probability_points",
     "result", "profit_loss", "closing_snapshot_sha256", "settled_at",
     "event_start_at", "closing_missing_reason",
+]
+
+# Read both historical headers without silently claiming actual placement.
+PRE_PLACEMENT_LOG_FIELDS = BET_LOG_FIELDS.copy()
+BET_LOG_FIELDS += [
+    "placement_status", "actual_stake", "actual_odds", "placed_at",
+    "bookmaker_reference", "placement_sha256", "placement_policy_warnings",
+    "evaluation_at", "max_placement_age_seconds", "currency", "approved_odds", "price_captured_at",
 ]
 
 try:
@@ -78,12 +89,18 @@ def read_bet_rows() -> list[dict[str, str]]:
         return []
     with BET_LOG_PATH.open(newline="", encoding="utf-8") as handle:
         reader = csv.DictReader(handle)
-        legacy_fields = BET_LOG_FIELDS[:-2]
-        if reader.fieldnames not in (BET_LOG_FIELDS, legacy_fields):
+        legacy_fields = PRE_PLACEMENT_LOG_FIELDS[:-2]
+        if reader.fieldnames not in (BET_LOG_FIELDS, PRE_PLACEMENT_LOG_FIELDS, legacy_fields):
             raise ValueError(
                 "DOCTORE_BET_LOG uses an incompatible legacy schema; migrate it before using this server"
             )
-        return list(reader)
+        rows = list(reader)
+        for row in rows:
+            for key in BET_LOG_FIELDS:
+                row.setdefault(key, "")
+            if not row["placement_status"]:
+                row["placement_status"] = "LEGACY_UNCONFIRMED"
+        return rows
 
 
 def write_bet_rows(rows: list[dict[str, Any]]) -> None:
@@ -161,19 +178,113 @@ def log_bet(params: LogBetInput) -> LogBetOutput:
         "clv_probability_points": "", "result": "", "profit_loss": "",
         "closing_snapshot_sha256": "", "settled_at": "",
         "event_start_at": market_snapshot["event_start_at"], "closing_missing_reason": "",
+        "placement_status": "APPROVED", "actual_stake": "", "actual_odds": "",
+        "placed_at": "", "bookmaker_reference": "", "placement_sha256": "",
+        "placement_policy_warnings": "", "evaluation_at": params.evaluation.evaluated_at,
+        "max_placement_age_seconds": params.evaluation.risk_policy["freshness_seconds"]["market_snapshot"],
+        "currency": params.evaluation.portfolio_state["currency"],
+        "approved_odds": decision["decimal_odds"], "price_captured_at": market_snapshot["captured_at"],
     }
     with log_lock():
         try:
             append_bet_row(row)
         except ValueError as exc:
             return LogBetOutput(logged=False, decision_id=decision_id, approved_stake=approved, reason=str(exc), log_path=str(BET_LOG_PATH))
-    return LogBetOutput(logged=True, decision_id=decision_id, approved_stake=approved, log_path=str(BET_LOG_PATH))
+    return LogBetOutput(logged=True, decision_id=decision_id, approved_stake=approved, placement_status="APPROVED", log_path=str(BET_LOG_PATH))
+
+
+def confirm_placement(params: ConfirmPlacementInput) -> ConfirmPlacementOutput:
+    """Record a user-confirmed external fact, never execute or authorize a bet.
+
+    Actual policy breaches are retained with warnings rather than hidden by
+    rejecting liabilities that already exist at the bookmaker.
+    """
+    placed_at = parse_time(params.placed_at)
+    if placed_at > datetime.now(timezone.utc):
+        raise ValueError("placed_at cannot be in the future")
+    with log_lock():
+        rows = read_bet_rows()
+        matching = [row for row in rows if row["decision_id"] == params.decision_id]
+        if len(matching) != 1:
+            raise ValueError("expected exactly one approved decision")
+        row = matching[0]
+        payload = {
+            "decision_id": params.decision_id,
+            "actual_stake": params.actual_stake, "actual_odds": params.actual_odds,
+            "placed_at": placed_at.astimezone(timezone.utc).isoformat(),
+            "bookmaker_reference": params.bookmaker_reference, "book": row["book"],
+            "currency": row.get("currency") or None,
+        }
+        digest = content_sha256(payload)
+        if row.get("placement_sha256"):
+            if row["placement_sha256"] != digest:
+                raise ValueError("placement already confirmed with different facts")
+            return ConfirmPlacementOutput(
+                confirmed=True, idempotent_replay=True, decision_id=params.decision_id,
+                actual_stake=params.actual_stake, actual_odds=params.actual_odds,
+                placement_sha256=digest,
+                policy_warnings=json.loads(row["placement_policy_warnings"]),
+            )
+        if row.get("result"):
+            raise ValueError("legacy settled records require an explicit migration/revision")
+        if any(other["book"] == row["book"] and other.get("bookmaker_reference") == params.bookmaker_reference
+               for other in rows if other["decision_id"] != params.decision_id):
+            raise ValueError("bookmaker reference is already attached to another decision")
+        warnings = []
+        if params.actual_stake > float(row["approved_stake"]) + 1e-12:
+            warnings.append("ACTUAL_STAKE_EXCEEDS_APPROVAL")
+        approved_odds = float(row.get("approved_odds") or row["odds_taken"])
+        if params.actual_odds < approved_odds:
+            warnings.append("ACTUAL_ODDS_BELOW_APPROVAL")
+        if row.get("event_start_at") and placed_at >= parse_time(row["event_start_at"]):
+            warnings.append("PLACED_AT_OR_AFTER_EVENT_START")
+        if row.get("evaluation_at") and placed_at < parse_time(row["evaluation_at"]):
+            warnings.append("PLACED_BEFORE_EVALUATION")
+        if row.get("price_captured_at") and row.get("max_placement_age_seconds"):
+            age = (placed_at - parse_time(row["price_captured_at"])).total_seconds()
+            if age > float(row["max_placement_age_seconds"]):
+                warnings.append("APPROVED_PRICE_EXPIRED_AT_PLACEMENT")
+        if row["placement_status"] == "LEGACY_UNCONFIRMED":
+            warnings.append("LEGACY_APPROVAL_PROVENANCE_INCOMPLETE")
+        journal = BET_LOG_PATH.with_suffix(BET_LOG_PATH.suffix + ".placements.jsonl")
+        records = []
+        if journal.exists():
+            records = [json.loads(line) for line in journal.read_text(encoding="utf-8").splitlines() if line.strip()]
+        existing = [record for record in records if record["decision_id"] == params.decision_id]
+        if existing and (len(existing) != 1 or existing[0]["placement_sha256"] != digest):
+            raise ValueError("conflicting placement journal entry")
+        if any(record.get("book") == row["book"] and record.get("bookmaker_reference") == params.bookmaker_reference
+               for record in records if record["decision_id"] != params.decision_id):
+            raise ValueError("bookmaker reference is already journaled for another decision")
+        if not existing:
+            with journal.open("a", encoding="utf-8") as handle:
+                handle.write(json.dumps({**payload, "placement_sha256": digest,
+                                         "confirmed_at": now_iso(), "policy_warnings": warnings}, sort_keys=True) + "\n")
+                handle.flush()
+                os.fsync(handle.fileno())
+        else:
+            warnings = existing[0]["policy_warnings"]
+        row.update({
+            "placement_status": "PLACED", "actual_stake": params.actual_stake,
+            "actual_odds": params.actual_odds, "odds_taken": params.actual_odds,
+            "approved_odds": approved_odds, "placed_at": payload["placed_at"],
+            "bookmaker_reference": params.bookmaker_reference,
+            "placement_sha256": digest, "placement_policy_warnings": json.dumps(warnings),
+        })
+        write_bet_rows(rows)
+        return ConfirmPlacementOutput(
+            confirmed=True, idempotent_replay=bool(existing), decision_id=params.decision_id,
+            actual_stake=params.actual_stake, actual_odds=params.actual_odds,
+            placement_sha256=digest, policy_warnings=warnings,
+        )
 
 
 def portfolio_status(params: PortfolioStatusInput) -> PortfolioStatusOutput:
     with log_lock():
         rows = read_bet_rows()
-    open_rows = [row for row in rows if not row.get("result")]
+    pending = [row for row in rows if row["placement_status"] == "APPROVED"]
+    legacy = [row for row in rows if row["placement_status"] == "LEGACY_UNCONFIRMED"]
+    open_rows = [row for row in rows if not row.get("result") and row["placement_status"] != "APPROVED"]
     settled = [row for row in rows if row.get("result")]
     decisive = [row for row in settled if row["result"] in {"win", "loss", "half_win", "half_loss"}]
     wins = sum(row["result"] in {"win", "half_win"} for row in decisive)
@@ -182,8 +293,11 @@ def portfolio_status(params: PortfolioStatusInput) -> PortfolioStatusOutput:
     counts: dict[str, int] = {}
     for row in settled:
         counts[row["result"]] = counts.get(row["result"], 0) + 1
-    exposure = sum(float(row["approved_stake"]) for row in open_rows)
+    exposure = sum(float(row.get("actual_stake") or row["approved_stake"]) for row in open_rows)
     return PortfolioStatusOutput(
+        pending_approval_count=len(pending),
+        approved_unplaced_amount=round(sum(float(row["approved_stake"]) for row in pending), 2),
+        legacy_unconfirmed_count=len(legacy),
         open_bet_count=len(open_rows), open_exposure=round(exposure, 2),
         exposure_pct_of_bankroll=round(exposure / params.bankroll * 100, 4),
         settled_bet_count=len(settled), decisive_bet_count=len(decisive),
