@@ -1,0 +1,158 @@
+name: MLB canonical offense history 2012-2021
+
+on:
+  push:
+    branches: ['research/mlb-offense-history-canonical-*']
+
+permissions:
+  contents: read
+
+jobs:
+  acquire:
+    strategy:
+      fail-fast: false
+      max-parallel: 3
+      matrix:
+        season: [2012,2013,2014,2015,2016,2017,2018,2019,2020,2021]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - name: Checkout exact canonical source SHA
+        uses: actions/checkout@v4
+        with:
+          ref: 40b113190fceaee38374c300c4f09a9392895485
+          fetch-depth: 1
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Acquire season offense history
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/acquire_mlb_v4_offense_history.py \
+            --season ${{ matrix.season }} \
+            --workers 6 \
+            --output-dir results/mlb-offense-${{ matrix.season }}
+      - name: Verify season artifact and hard gates
+        shell: bash
+        env:
+          SEASON: ${{ matrix.season }}
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json, os
+          from hashlib import sha256
+          from pathlib import Path
+          season=os.environ['SEASON']
+          root=Path(f'results/mlb-offense-{season}')
+          raw=(root/'manifest.json').read_bytes()
+          m=json.loads(raw)
+          sidecar=(root/'manifest.sha256').read_bytes()
+          expected=(sha256(raw).hexdigest()+'\n').encode()
+          assert sidecar==expected, (sidecar,expected)
+          assert m['schema_version']=='doctore.mlb-offense-history-manifest.v1'
+          assert m['policy']=='authoritative_complete_played_offense_history_v1'
+          assert m['reject_count']==0, m
+          assert m['normalized_records']==m['classified_played_games'], m
+          assert m['target_domain_records']+m['supplemental_played_records']==m['normalized_records'], m
+          records_raw=(root/m['records_file']).read_bytes()
+          assert sha256(records_raw).hexdigest()==m['records_sha256']
+          rows=[json.loads(line) for line in records_raw.splitlines() if line.strip()]
+          assert len(rows)==m['normalized_records']
+          assert len({int(r['game_pk']) for r in rows})==len(rows)
+          assert all(r['offense_status']=='PASS' and r['offense_history_eligible'] is True for r in rows)
+          assert all(r['final_event_at'] < '9999' for r in rows)
+          for r in rows:
+              for side in ('away_batting','home_batting'):
+                  b=r[side]
+                  pa=int(b['plate_appearances'])
+                  assert pa>0
+                  assert 0<=int(b['walks'])<=pa
+                  assert 0<=int(b['strikeouts'])<=pa
+                  assert 0<=int(b['home_runs'])<=int(b['hits'])<=pa
+          print(json.dumps({
+              'season':m['season'],
+              'normalized_records':m['normalized_records'],
+              'target_domain_records':m['target_domain_records'],
+              'supplemental_played_records':m['supplemental_played_records'],
+              'skip_count':m['skip_count'],
+              'reject_count':m['reject_count'],
+              'domain_role_counts':m['domain_role_counts'],
+              'manifest_sha256':sha256(raw).hexdigest(),
+          },sort_keys=True))
+          PY
+      - name: Upload immutable season artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: mlb-offense-${{ matrix.season }}-40b11319
+          path: results/mlb-offense-${{ matrix.season }}/
+          if-no-files-found: error
+          retention-days: 30
+
+  aggregate:
+    needs: acquire
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Download all season artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: mlb-offense-*-40b11319
+          path: artifacts
+      - name: Verify complete played universe
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          manifests=[]
+          all_pks=set()
+          total=0
+          target=0
+          supplemental=0
+          skips=0
+          rejects=0
+          for season in range(2012,2022):
+              root=Path('artifacts')/f'mlb-offense-{season}-40b11319'
+              m=json.loads((root/'manifest.json').read_text())
+              rows=[json.loads(line) for line in (root/m['records_file']).read_text().splitlines() if line.strip()]
+              pks={int(r['game_pk']) for r in rows}
+              assert not (all_pks & pks), f'cross-season duplicate gamePk: {sorted(all_pks & pks)[:5]}'
+              all_pks.update(pks)
+              total+=m['normalized_records']
+              target+=m['target_domain_records']
+              supplemental+=m['supplemental_played_records']
+              skips+=m['skip_count']
+              rejects+=m['reject_count']
+              manifests.append({
+                  'season':season,
+                  'normalized_records':m['normalized_records'],
+                  'target_domain_records':m['target_domain_records'],
+                  'supplemental_played_records':m['supplemental_played_records'],
+                  'skip_count':m['skip_count'],
+                  'reject_count':m['reject_count'],
+              })
+          summary={
+              'schema_version':'doctore.mlb-offense-history-aggregate.v1',
+              'source_sha':'40b113190fceaee38374c300c4f09a9392895485',
+              'seasons':manifests,
+              'normalized_records':total,
+              'unique_game_pks':len(all_pks),
+              'target_domain_records':target,
+              'supplemental_played_records':supplemental,
+              'skip_count':skips,
+              'reject_count':rejects,
+              'expected_complete_played_universe':22765,
+              'pass': total==22765 and len(all_pks)==22765 and rejects==0,
+          }
+          Path('aggregate-summary.json').write_text(json.dumps(summary,indent=2,sort_keys=True)+'\n')
+          print(json.dumps(summary,indent=2,sort_keys=True))
+          assert summary['pass'], summary
+          PY
+      - name: Upload aggregate evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: mlb-offense-aggregate-40b11319
+          path: aggregate-summary.json
+          retention-days: 30
