@@ -19,6 +19,7 @@ from feature_provenance import validate_provenance_record
 
 SHA256_RE = re.compile(r"^[a-fA-F0-9]{64}$")
 POPULATION_RULE = "all_source_collection_events_final_before_cutoff_v1"
+COMPACT_POPULATION_RULE = "all_source_collection_events_final_before_cutoff_v2_hash"
 PARK_ARTIFACT_SCHEMA = "doctore.park-aggregate.v1"
 
 
@@ -126,6 +127,14 @@ def validate_aggregate_feature_provenance(
     source_collection_records_bytes_by_id: Mapping[str, bytes],
 ) -> tuple[str, ...]:
     """Validate aggregate row provenance against exact immutable source populations."""
+    if contributor_manifest.get("schema_version") == "doctore.aggregate-contributors.v2":
+        return validate_compact_aggregate_feature_provenance(
+            record,
+            contributor_manifest=contributor_manifest,
+            aggregate_artifact_bytes=aggregate_artifact_bytes,
+            source_collection_manifest_bytes_by_id=source_collection_manifest_bytes_by_id,
+            source_collection_records_bytes_by_id=source_collection_records_bytes_by_id,
+        )
     reasons = list(validate_provenance_record(record))
     if str(record.get("availability_mode", "")) != "AGGREGATE_PRIOR_EVENT_FINAL":
         reasons.append("AGGREGATE_MODE_REQUIRED")
@@ -401,6 +410,257 @@ def validate_aggregate_feature_provenance(
         else:
             expected_factor = venue_mean / league_mean
             features = artifact.get("features") if isinstance(artifact.get("features"), Mapping) else {}
+            if features.get("park_games_prior") != expected_venue_count:
+                reasons.append("PARK_GAMES_PRIOR_MISMATCH")
+            if not _float_matches(features.get("park_total_runs_mean_prior"), venue_mean):
+                reasons.append("PARK_TOTAL_RUNS_MEAN_MISMATCH")
+            if not _float_matches(features.get("park_run_factor_prior"), expected_factor):
+                reasons.append("PARK_RUN_FACTOR_MISMATCH")
+
+    return tuple(sorted(set(reasons)))
+
+
+def _compact_population_hash(items: Sequence[Mapping[str, Any]]) -> str:
+    ordered = sorted(
+        (dict(item) for item in items),
+        key=lambda item: (str(item["end_at"]), str(item["event_id"])),
+    )
+    return sha256_bytes(canonical_bytes(ordered))
+
+
+def validate_compact_aggregate_feature_provenance(
+    record: Mapping[str, Any],
+    *,
+    contributor_manifest: Mapping[str, Any],
+    aggregate_artifact_bytes: bytes,
+    source_collection_manifest_bytes_by_id: Mapping[str, bytes],
+    source_collection_records_bytes_by_id: Mapping[str, bytes],
+) -> tuple[str, ...]:
+    """Validate v2 compact park provenance by reconstructing the full population."""
+    reasons = list(validate_provenance_record(record))
+    if str(record.get("availability_mode", "")) != "AGGREGATE_PRIOR_EVENT_FINAL":
+        reasons.append("AGGREGATE_MODE_REQUIRED")
+        return tuple(sorted(set(reasons)))
+
+    target_event_id = str(record.get("event_id", "")).strip()
+    feature_group = str(record.get("feature_group", "")).strip()
+    derivation_version = str(record.get("derivation_version", "")).strip()
+    manifest_id = str(record.get("contributor_manifest_id", "")).strip()
+
+    try:
+        cutoff = _ts(record.get("feature_cutoff_at"), "feature_cutoff_at")
+    except AggregateProvenanceError:
+        reasons.append("FEATURE_CUTOFF_INVALID")
+        return tuple(sorted(set(reasons)))
+
+    actual_manifest_sha = sha256_bytes(canonical_bytes(contributor_manifest))
+    if actual_manifest_sha != str(record.get("contributor_manifest_sha256", "")):
+        reasons.append("CONTRIBUTOR_MANIFEST_SHA_MISMATCH")
+    if contributor_manifest.get("schema_version") != "doctore.aggregate-contributors.v2":
+        reasons.append("CONTRIBUTOR_MANIFEST_SCHEMA_INVALID")
+    if str(contributor_manifest.get("manifest_id", "")) != manifest_id:
+        reasons.append("CONTRIBUTOR_MANIFEST_ID_MISMATCH")
+    if str(contributor_manifest.get("event_id", "")) != target_event_id:
+        reasons.append("CONTRIBUTOR_TARGET_EVENT_MISMATCH")
+    if str(contributor_manifest.get("feature_group", "")) != feature_group:
+        reasons.append("CONTRIBUTOR_FEATURE_GROUP_MISMATCH")
+    if str(contributor_manifest.get("derivation_version", "")) != derivation_version:
+        reasons.append("CONTRIBUTOR_DERIVATION_VERSION_MISMATCH")
+    if contributor_manifest.get("population_rule") != COMPACT_POPULATION_RULE:
+        reasons.append("CONTRIBUTOR_POPULATION_RULE_INVALID")
+    try:
+        if _ts(contributor_manifest.get("feature_cutoff_at"), "manifest.feature_cutoff_at") != cutoff:
+            reasons.append("CONTRIBUTOR_FEATURE_CUTOFF_MISMATCH")
+    except AggregateProvenanceError:
+        reasons.append("CONTRIBUTOR_FEATURE_CUTOFF_INVALID")
+
+    aggregate_sha = sha256_bytes(aggregate_artifact_bytes)
+    if aggregate_sha != str(record.get("aggregate_artifact_sha256", "")):
+        reasons.append("AGGREGATE_ARTIFACT_SHA_MISMATCH")
+    if aggregate_sha != str(record.get("source_sha256", "")):
+        reasons.append("SOURCE_SHA256_AGGREGATE_MISMATCH")
+
+    try:
+        start_season = int(contributor_manifest.get("history_start_season"))
+        end_season = int(contributor_manifest.get("history_end_season"))
+    except (TypeError, ValueError):
+        start_season = end_season = -1
+        reasons.append("HISTORY_SEASON_RANGE_INVALID")
+    if start_season > end_season:
+        reasons.append("HISTORY_SEASON_RANGE_INVALID")
+    try:
+        target_venue_id = int(contributor_manifest.get("target_venue_id"))
+        if target_venue_id <= 0:
+            raise ValueError
+    except (TypeError, ValueError):
+        target_venue_id = -1
+        reasons.append("TARGET_VENUE_ID_INVALID")
+
+    source_collections = contributor_manifest.get("source_collections")
+    if not isinstance(source_collections, Sequence) or isinstance(source_collections, (str, bytes)) or not source_collections:
+        reasons.append("SOURCE_COLLECTIONS_EMPTY")
+        source_collections = []
+
+    seen_collection_ids: set[str] = set()
+    seen_seasons: set[int] = set()
+    expected_by_event: dict[str, dict[str, Any]] = {}
+    for collection in source_collections:
+        if not isinstance(collection, Mapping):
+            reasons.append("SOURCE_COLLECTION_INVALID")
+            continue
+        collection_id = str(collection.get("collection_id", "")).strip()
+        if not collection_id:
+            reasons.append("SOURCE_COLLECTION_ID_MISSING")
+            continue
+        if collection_id in seen_collection_ids:
+            reasons.append("SOURCE_COLLECTION_DUPLICATE")
+        seen_collection_ids.add(collection_id)
+        season = collection.get("season")
+        if not isinstance(season, int) or isinstance(season, bool):
+            reasons.append("SOURCE_COLLECTION_SEASON_INVALID")
+            season = -1
+        elif season in seen_seasons:
+            reasons.append("SOURCE_COLLECTION_SEASON_DUPLICATE")
+        else:
+            seen_seasons.add(season)
+
+        manifest_sha = str(collection.get("manifest_sha256", ""))
+        records_sha = str(collection.get("records_sha256", ""))
+        if not SHA256_RE.fullmatch(manifest_sha):
+            reasons.append("SOURCE_COLLECTION_MANIFEST_SHA_INVALID")
+        if not SHA256_RE.fullmatch(records_sha):
+            reasons.append("SOURCE_COLLECTION_RECORDS_SHA_INVALID")
+        raw_manifest = source_collection_manifest_bytes_by_id.get(collection_id)
+        raw_records = source_collection_records_bytes_by_id.get(collection_id)
+        if raw_manifest is None:
+            reasons.append("SOURCE_COLLECTION_MANIFEST_MISSING")
+            continue
+        if raw_records is None:
+            reasons.append("SOURCE_COLLECTION_RECORDS_MISSING")
+            continue
+        if sha256_bytes(raw_manifest) != manifest_sha:
+            reasons.append("SOURCE_COLLECTION_MANIFEST_SHA_MISMATCH")
+            continue
+        if sha256_bytes(raw_records) != records_sha:
+            reasons.append("SOURCE_COLLECTION_RECORDS_SHA_MISMATCH")
+            continue
+        try:
+            source_manifest = json.loads(raw_manifest.decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError):
+            reasons.append("SOURCE_COLLECTION_MANIFEST_JSON_INVALID")
+            continue
+        if source_manifest.get("schema_version") != "doctore.mlb-feature-source-manifest.v2":
+            reasons.append("SOURCE_COLLECTION_SCHEMA_INVALID")
+            continue
+        if source_manifest.get("acquisition_policy") != "authoritative_live_schedule_resolution_v4":
+            reasons.append("SOURCE_COLLECTION_POLICY_UNVERIFIED")
+        if isinstance(season, int) and source_manifest.get("season") != season:
+            reasons.append("SOURCE_COLLECTION_SEASON_MISMATCH")
+        if source_manifest.get("records_sha256") != records_sha:
+            reasons.append("SOURCE_COLLECTION_RECORDS_SHA_MANIFEST_MISMATCH")
+        hard_fields = (
+            "strict_final_conflicts", "unresolved_no_strict_played_final",
+            "hydration_reject_count", "timestamp_or_core_reject_count",
+        )
+        for field in hard_fields:
+            if source_manifest.get(field) != 0:
+                reasons.append("SOURCE_COLLECTION_HAS_UNRESOLVED_CANDIDATES")
+        if collection.get("unresolved_candidate_reject_count") != 0:
+            reasons.append("SOURCE_COLLECTION_UNRESOLVED_COUNT_MISMATCH")
+        try:
+            source_rows = _parse_jsonl(raw_records, collection_id=collection_id)
+        except AggregateProvenanceError:
+            reasons.append("SOURCE_COLLECTION_RECORDS_JSON_INVALID")
+            continue
+        if source_manifest.get("normalized_source_records") != len(source_rows):
+            reasons.append("SOURCE_COLLECTION_RECORD_COUNT_MISMATCH")
+        if source_manifest.get("park_pass_records") != len(source_rows):
+            reasons.append("SOURCE_COLLECTION_PARK_COVERAGE_INCOMPLETE")
+        for row in source_rows:
+            try:
+                projected = _project_source_record(row)
+                end_at = _ts(projected["end_at"], "projected.end_at")
+            except AggregateProvenanceError:
+                reasons.append("SOURCE_RECORD_INVALID")
+                continue
+            if end_at >= cutoff:
+                continue
+            event_id = projected["event_id"]
+            if event_id == target_event_id:
+                reasons.append("CURRENT_EVENT_RESULT_LEAKAGE")
+                continue
+            if event_id in expected_by_event:
+                reasons.append("SOURCE_EVENT_DUPLICATE_ACROSS_COLLECTIONS")
+                continue
+            expected_by_event[event_id] = projected
+
+    if start_season <= end_season:
+        if seen_seasons != set(range(start_season, end_season + 1)):
+            reasons.append("SOURCE_COLLECTION_SEASON_RANGE_INCOMPLETE")
+
+    expected = list(expected_by_event.values())
+    expected_count = len(expected)
+    if expected_count < 1:
+        reasons.append("CONTRIBUTOR_POPULATION_EMPTY")
+    expected_hash = _compact_population_hash(expected)
+    manifest_population_hash = str(contributor_manifest.get("contributor_population_sha256", ""))
+    if not SHA256_RE.fullmatch(manifest_population_hash):
+        reasons.append("CONTRIBUTOR_POPULATION_SHA_INVALID")
+    elif manifest_population_hash != expected_hash:
+        reasons.append("CONTRIBUTOR_POPULATION_SHA_MISMATCH")
+    if contributor_manifest.get("contributor_count") != expected_count:
+        reasons.append("MANIFEST_CONTRIBUTOR_COUNT_MISMATCH")
+    if record.get("contributor_count") != expected_count:
+        reasons.append("RECORD_CONTRIBUTOR_COUNT_MISMATCH")
+
+    expected_venue_count = sum(1 for item in expected if item["venue_id"] == target_venue_id)
+    if expected_venue_count < 1:
+        reasons.append("TARGET_VENUE_PRIOR_HISTORY_EMPTY")
+    if contributor_manifest.get("venue_contributor_count") != expected_venue_count:
+        reasons.append("VENUE_CONTRIBUTOR_COUNT_MISMATCH")
+
+    if expected:
+        latest = max(_ts(item["end_at"], "expected.end_at") for item in expected)
+        for label, raw in (
+            ("MANIFEST", contributor_manifest.get("latest_contributor_end_at")),
+            ("RECORD", record.get("latest_contributor_end_at")),
+        ):
+            try:
+                if _ts(raw, f"{label}.latest_contributor_end_at") != latest:
+                    reasons.append(f"{label}_LATEST_CONTRIBUTOR_MISMATCH")
+            except AggregateProvenanceError:
+                reasons.append(f"{label}_LATEST_CONTRIBUTOR_INVALID")
+
+    try:
+        artifact = json.loads(aggregate_artifact_bytes.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        artifact = {}
+        reasons.append("AGGREGATE_ARTIFACT_JSON_INVALID")
+    if not isinstance(artifact, Mapping):
+        artifact = {}
+        reasons.append("AGGREGATE_ARTIFACT_INVALID")
+    if artifact.get("schema_version") != PARK_ARTIFACT_SCHEMA:
+        reasons.append("AGGREGATE_ARTIFACT_SCHEMA_INVALID")
+    if str(artifact.get("event_id", "")) != target_event_id:
+        reasons.append("AGGREGATE_ARTIFACT_EVENT_MISMATCH")
+    if str(artifact.get("feature_group", "")) != feature_group:
+        reasons.append("AGGREGATE_ARTIFACT_GROUP_MISMATCH")
+    if str(artifact.get("feature_cutoff_at", "")) != str(record.get("feature_cutoff_at", "")):
+        reasons.append("AGGREGATE_ARTIFACT_CUTOFF_MISMATCH")
+    if artifact.get("target_venue_id") != target_venue_id:
+        reasons.append("AGGREGATE_ARTIFACT_VENUE_MISMATCH")
+    if str(artifact.get("derivation_version", "")) != derivation_version:
+        reasons.append("AGGREGATE_ARTIFACT_DERIVATION_MISMATCH")
+
+    if expected and expected_venue_count > 0:
+        league_mean = sum(item["final_total_runs"] for item in expected) / expected_count
+        venue_rows = [item for item in expected if item["venue_id"] == target_venue_id]
+        venue_mean = sum(item["final_total_runs"] for item in venue_rows) / expected_venue_count
+        if league_mean <= 0:
+            reasons.append("LEAGUE_RUN_MEAN_NONPOSITIVE")
+        else:
+            features = artifact.get("features") if isinstance(artifact.get("features"), Mapping) else {}
+            expected_factor = venue_mean / league_mean
             if features.get("park_games_prior") != expected_venue_count:
                 reasons.append("PARK_GAMES_PRIOR_MISMATCH")
             if not _float_matches(features.get("park_total_runs_mean_prior"), venue_mean):
