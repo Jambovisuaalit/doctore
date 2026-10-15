@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from contextlib import contextmanager
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from typing import Any, Iterator
 import csv
 import json
@@ -127,6 +127,57 @@ def append_bet_row(row: dict[str, Any]) -> None:
     write_bet_rows(rows)
 
 
+def approval_time() -> datetime:
+    """Server clock; historical evaluation timestamps never authorize a live write."""
+    return datetime.now(timezone.utc)
+
+
+def current_approval_evaluation(params: LogBetInput, rows, now):
+    """Conservatively reserve ledger liabilities in addition to external state.
+
+    The snapshot has no ledger watermark/position identities. Subtracting presumed
+    overlap would be unsafe. Pending approvals reserve capacity but are never
+    reported as actual exposure. Unknown correlation is reserved across groups.
+    """
+    now = now.astimezone(timezone.utc)
+    journal = BET_LOG_PATH.with_suffix(BET_LOG_PATH.suffix + ".placements.jsonl")
+    if journal.exists():
+        for record in map(json.loads, filter(str.strip, journal.read_text(encoding="utf-8").splitlines())):
+            if not any(row["decision_id"] == record["decision_id"] and
+                       row.get("placement_sha256") == record["placement_sha256"] for row in rows):
+                raise ValueError("APPROVAL_PLACEMENT_REPLAY_REQUIRED: repair journal/state before approval")
+    evaluation = params.evaluation.model_copy(deep=True)
+    portfolio = evaluation.portfolio_state
+    captured = parse_time(portfolio["captured_at"])
+    maximum = evaluation.risk_policy["freshness_seconds"]["portfolio_state"]
+    age = (now - captured).total_seconds()
+    if age < 0 or age > maximum:
+        raise ValueError("APPROVAL_PORTFOLIO_STALE: refresh external bankroll and balance")
+    amounts = {key: 0.0 for key in portfolio["exposures"]}
+    for row in rows:
+        if row.get("currency") and row["currency"] != portfolio["currency"]:
+            raise ValueError("APPROVAL_CURRENCY_MISMATCH: ledger must have one currency")
+        pending = row["placement_status"] == "APPROVED"
+        stake = float(row.get("actual_stake") or row["approved_stake"])
+        if not row.get("result"):
+            amounts["open_amount"] += stake
+            # Old ledger rows lack correlation IDs: reserve against every group.
+            amounts["correlation_group_amount"] += stake
+            if row["competition"] == portfolio["league"]:
+                amounts["league_amount"] += stake
+        at = parse_time(row.get("placed_at") or row["logged_at"])
+        if pending or at.astimezone(timezone.utc).date() == now.date():
+            amounts["daily_turnover_amount"] += stake
+        if pending or at >= now - timedelta(days=3):
+            amounts["rolling_3d_turnover_amount"] += stake
+    for key, amount in amounts.items():
+        portfolio["exposures"][key] += amount
+    portfolio["available_balance"] = max(0, portfolio["available_balance"] - amounts["open_amount"])
+    # Keep the original timestamp: freshness must not be fabricated.
+    evaluation.evaluated_at = now.isoformat()
+    return evaluation
+
+
 def log_bet(params: LogBetInput) -> LogBetOutput:
     decision = params.decision_output
     errors = schema_errors("decision", decision)
@@ -187,7 +238,18 @@ def log_bet(params: LogBetInput) -> LogBetOutput:
     }
     with log_lock():
         try:
-            append_bet_row(row)
+            rows = read_bet_rows()
+            if any(existing["decision_id"] == decision_id for existing in rows):
+                raise ValueError(f"decision_id already logged: {decision_id}")
+            live_evaluation = current_approval_evaluation(params, rows, approval_time())
+            live_decision = run_decision(live_evaluation)
+            if live_decision["decision"] != "BET":
+                raise ValueError("APPROVAL_REVALIDATION_BLOCKED: " + ", ".join(live_decision["reason_codes"]))
+            if approved > float(live_decision["staking"]["final_stake"]) + 1e-12:
+                raise ValueError("APPROVAL_RISK_CHANGED: refresh decision and human approval")
+            row["logged_at"] = live_evaluation.evaluated_at
+            rows.append(row)
+            write_bet_rows(rows)
         except ValueError as exc:
             return LogBetOutput(logged=False, decision_id=decision_id, approved_stake=approved, reason=str(exc), log_path=str(BET_LOG_PATH))
     return LogBetOutput(logged=True, decision_id=decision_id, approved_stake=approved, placement_status="APPROVED", log_path=str(BET_LOG_PATH))
