@@ -120,7 +120,7 @@ def acquire_one(candidate: dict) -> dict:
                 "reject": reject_context(game, stage="hydration", reason=exc.code, detail=exc.detail),
                 "hydration_attempted": True,
                 "hydrated": False,
-                "hydrated_domain_exclusion": exc.code == "NON_NINE_INNING_DOMAIN",
+                "hydrated_domain_exclusion": exc.code in {"NON_NINE_INNING_DOMAIN", "COMPLETED_EARLY_DOMAIN"},
             }
 
     timestamps_url = f"https://statsapi.mlb.com/api/v1.1/game/{game_pk}/feed/live/timestamps"
