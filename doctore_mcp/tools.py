@@ -13,6 +13,7 @@ from .decision_adapter import (
     load_model_prediction,
 )
 from .ledger import confirm_placement, log_bet, portfolio_status
+from .nhl_quote_scanner import ScanNhlTotalsInput, ScanNhlTotalsOutput, scan_nhl_totals
 from .pinnacle_parser import parse_pinnacle_table
 from .runtime import parse_time
 from .schemas import (
@@ -128,3 +129,13 @@ async def doctore_tennis_data(params: TennisDataInput) -> TennisDataOutput:
 async def doctore_confirm_placement(params: ConfirmPlacementInput) -> ConfirmPlacementOutput:
     """Record user-confirmed actual odds/stake/time and receipt; never place a bet."""
     return confirm_placement(params)
+
+
+@mcp.tool(name="doctore_scan_nhl_totals", annotations={"title": "Scan timestamped NHL totals in SHADOW mode", "readOnlyHint": True, "destructiveHint": False, "idempotentHint": True, "openWorldHint": False})
+async def doctore_scan_nhl_totals(params: ScanNhlTotalsInput) -> ScanNhlTotalsOutput:
+    """Fail closed on unknown 60m/OT/SO rules, alternate lines and unverifiable timestamps.
+
+    Price-vectors can be compared without a betting model, but every result remains
+    research-only: no executable quote claim and no bet placement or stake.
+    """
+    return scan_nhl_totals(params.rows, params.evaluated_at, params.max_age_seconds)
