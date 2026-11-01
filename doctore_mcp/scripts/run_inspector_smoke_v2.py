@@ -2,8 +2,8 @@
 """Run all exposed Doctore MCP tools through Inspector over stdio.
 
 P0 verification target:
-- all 12 currently exposed tools must be listed;
-- all 12 tools must accept a real stdio tools/call request;
+- all 13 currently exposed tools must be listed;
+- all 13 tools must accept a real stdio tools/call request;
 - context-gate and slate-orchestrator calls must also return their expected
   fail-closed semantic markers.
 """
@@ -33,6 +33,7 @@ EXPECTED_TOOLS = {
     "doctore_run_slate",
     "doctore_tennis_data",
     "doctore_confirm_placement",
+    "doctore_scan_nhl_totals",
 }
 
 
@@ -345,6 +346,19 @@ def main() -> int:
             "SLATE_MARKET_NOT_IN_PARSED_INPUT",
             "doctore_run_slate",
         )
+
+        nhl_output = _run(
+            base, method="tools/call", tool="doctore_scan_nhl_totals",
+            params={
+                "evaluated_at": datetime.now(timezone.utc).isoformat(),
+                "rows": [
+                    {"canonical_event_id": "nhl:2026020177", "book": "Pinnacle",
+                     "source_observed_at": "2026-11-01"}
+                ],
+            },
+        )
+        _require_marker(nhl_output, "MISSING_FIELDS", "NHL missing quote metadata gate")
+        _require_marker(nhl_output, "SHADOW", "NHL scanner execution boundary")
 
         tennis_output = _run(base, method="tools/call", tool="doctore_tennis_data",
                              params={"command": "get_scoreboard", "tour": "atp"})
