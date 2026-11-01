@@ -2,8 +2,8 @@
 """Run all exposed Doctore MCP tools through Inspector over stdio.
 
 P0 verification target:
-- all 13 currently exposed tools must be listed;
-- all 13 tools must accept a real stdio tools/call request;
+- all 14 currently exposed tools must be listed;
+- all 14 tools must accept a real stdio tools/call request;
 - context-gate and slate-orchestrator calls must also return their expected
   fail-closed semantic markers.
 """
@@ -34,6 +34,7 @@ EXPECTED_TOOLS = {
     "doctore_tennis_data",
     "doctore_confirm_placement",
     "doctore_scan_nhl_totals",
+    "doctore_collect_nhl_totals",
 }
 
 
@@ -180,6 +181,8 @@ def main() -> int:
             "DOCTORE_TENNIS_OFFLINE=1",
             "-e",
             "DOCTORE_TENNIS_MODE=research",
+            "-e",
+            "DOCTORE_ODDS_API_KEY=",
             args.python,
             str(server_path),
         ]
@@ -359,6 +362,15 @@ def main() -> int:
         )
         _require_marker(nhl_output, "MISSING_FIELDS", "NHL missing quote metadata gate")
         _require_marker(nhl_output, "SHADOW", "NHL scanner execution boundary")
+        acquired = _run(
+            base, method="tools/call", tool="doctore_collect_nhl_totals",
+            params={"regions": "eu,us",
+                    "target_event_pairs": ["Anaheim Ducks|Ottawa Senators",
+                                           "Edmonton Oilers|New York Rangers"]},
+        )
+        _require_marker(acquired, "BLOCKED_NO_ODDS_API_KEY", "keyless NHL source gate")
+        _require_marker(acquired, "SHADOW", "NHL collector execution boundary")
+
 
         tennis_output = _run(base, method="tools/call", tool="doctore_tennis_data",
                              params={"command": "get_scoreboard", "tour": "atp"})
