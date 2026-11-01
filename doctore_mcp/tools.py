@@ -14,6 +14,7 @@ from .decision_adapter import (
 )
 from .ledger import confirm_placement, log_bet, portfolio_status
 from .nhl_quote_scanner import ScanNhlTotalsInput, ScanNhlTotalsOutput, scan_nhl_totals
+from .nhl_source_adapter import CollectNhlTotalsInput, CollectNhlTotalsOutput, collect_live_nhl_totals
 from .pinnacle_parser import parse_pinnacle_table
 from .runtime import parse_time
 from .schemas import (
@@ -139,3 +140,13 @@ async def doctore_scan_nhl_totals(params: ScanNhlTotalsInput) -> ScanNhlTotalsOu
     research-only: no executable quote claim and no bet placement or stake.
     """
     return scan_nhl_totals(params.rows, params.evaluated_at, params.max_age_seconds)
+
+
+@mcp.tool(name="doctore_collect_nhl_totals", annotations={"title": "Acquire NHL totals with immutable raw evidence (SHADOW)", "readOnlyHint": False, "destructiveHint": False, "idempotentHint": False, "openWorldHint": True})
+async def doctore_collect_nhl_totals(params: CollectNhlTotalsInput) -> CollectNhlTotalsOutput:
+    """Collect source-timestamped NHL total quotes with official event IDs.
+
+    Always SHADOW; requires DOCTORE_ODDS_API_KEY and independently reviewed
+    exact-market settlement rules. Writes local SHA-256 evidence, never bets.
+    """
+    return await asyncio.to_thread(collect_live_nhl_totals, params)

@@ -129,12 +129,12 @@ jobs:
           mkdir -p results
           python -m unittest discover -s tests -p 'test_*.py' -v 2>&1 | tee results/unittest.log
 
-      - name: Run MCP Inspector 13-of-13 smoke suite
+      - name: Run MCP Inspector 14-of-14 smoke suite
         shell: bash
         run: |
           set -euo pipefail
           python doctore_mcp/scripts/run_inspector_smoke.py --repo "$PWD" 2>&1 | tee results/inspector.log
-          grep -F "Inspector smoke suite passed: 13/13 expected tools" results/inspector.log
+          grep -F "Inspector smoke suite passed: 14/14 expected tools" results/inspector.log
 
       - name: Record exact-SHA verification evidence
         shell: bash
