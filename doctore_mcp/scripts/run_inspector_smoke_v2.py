@@ -12,6 +12,7 @@ from __future__ import annotations
 import argparse
 from datetime import datetime, timezone, timedelta
 import json
+import os
 from pathlib import Path
 import runpy
 import re
@@ -181,12 +182,13 @@ def main() -> int:
             "DOCTORE_TENNIS_OFFLINE=1",
             "-e",
             "DOCTORE_TENNIS_MODE=research",
-            "-e",
-            "DOCTORE_ODDS_API_KEY=",
             args.python,
             str(server_path),
         ]
 
+        # Inspector CLI rejects empty -e values; remove credential from the
+        # subprocess-inherited environment for deterministic offline smoke.
+        os.environ.pop("DOCTORE_ODDS_API_KEY", None)
         listed = _run(base, method="tools/list")
         missing = sorted(name for name in EXPECTED_TOOLS if name not in listed)
         if missing:
