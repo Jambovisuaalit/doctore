@@ -68,6 +68,9 @@ class ParsePinnacleOutput(BaseModel):
 class QualityGateInput(BaseModel):
     model_config = ConfigDict(extra="forbid")
     snapshot_at: str
+    commence_time: Optional[str] = None
+    last_update: Optional[str] = None
+    live_verified: bool = False
     max_age_minutes: Optional[float] = Field(default=None, gt=0)
     reference_odds: Optional[dict[str, float]] = None
     current_odds: Optional[dict[str, float]] = None
@@ -78,6 +81,7 @@ class QualityGateOutput(BaseModel):
     status: str
     reasons: list[str]
     age_minutes: Optional[float]
+    market_state: Optional[str] = None
 
 
 class LoadPredictionInput(BaseModel):
