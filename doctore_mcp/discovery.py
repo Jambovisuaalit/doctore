@@ -46,3 +46,27 @@ def review_market(sport: str, event: str) -> str:
         "Present the structured result. A BET requires explicit human approval before logging. "
         "Approval is not placement; confirm only a user-reported external execution."
     )
+
+
+@mcp.resource(
+    "doctore://prompts/review_market", name="review_market",
+    mime_type="application/json",
+)
+def review_market_resource() -> str:
+    """Read the same review_market prompt template in hosts with resource access.
+
+    The argument placeholders are template values, not actual event evidence.
+    Reading this resource performs no market analysis or state mutation.
+    """
+    return json.dumps({
+        "name": "review_market",
+        "description": "Market review through source, model, decision and human-review gates.",
+        "arguments": [
+            {"name": "sport", "required": True, "placeholder": "{sport}"},
+            {"name": "event", "required": True, "placeholder": "{event}"},
+        ],
+        "messages": [{
+            "role": "user",
+            "content": {"type": "text", "text": review_market("{sport}", "{event}")},
+        }],
+    })

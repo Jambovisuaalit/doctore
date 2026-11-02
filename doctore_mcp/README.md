@@ -334,3 +334,17 @@ The fourteen-tool table above includes
 This is a local stdio server. It does not provide a hosted HTTP endpoint, remote
 authentication, automatic bookmaker access, or trained production models. Optional
 providers retain their documented credential and verification requirements.
+
+### Read the review prompt in Codex
+
+Hosts that expose resources but no MCP prompt invocation can read
+`doctore://prompts/review_market`. Its resource name is `review_market`.
+The JSON response contains required `sport` and `event` arguments and a message
+template with `{sport}` and `{event}` placeholder values. The text is rendered
+by the original `review_market` prompt function, preventing duplicate instructions
+from drifting. Substitute actual user-supplied scope when using the template;
+the placeholders are not event evidence. Reading it does not analyze a market,
+fetch provider data, approve a decision or mutate the ledger.
+
+The native MCP `review_market` prompt is retained for clients that support it.
+This resource fallback does not imply a Codex native prompt menu is available.
