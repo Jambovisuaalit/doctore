@@ -122,7 +122,9 @@ class EdgeAndStakeOutput(BaseModel):
     decision: str
     reason_codes: list[str]
     no_vig_probability: Optional[float]
-    overround: Optional[float]
+    overround: Optional[float] = Field(..., description="Legacy excess fraction: sum(1/decimal_odds)-1. Ambiguous name retained for compatibility; prefer overround_excess or implied_probability_sum.")
+    implied_probability_sum: Optional[float] = Field(default=None, description="Booksum B=sum(1/decimal_odds) across the complete outcome set, as a fraction (1.0238 means 102.38%). Not a model probability.")
+    overround_excess: Optional[float] = Field(default=None, description="Excess fraction B-1; 0.0238 means 2.38 percentage points above 100%. Not realized profit or theoretical balanced hold.")
     ev: Optional[float]
     edge_vs_market_pp: Optional[float]
     full_kelly: Optional[float]

@@ -400,3 +400,14 @@ still require freshness, identity, evidence, context and risk checks. Path trave
 and paths outside the configured artifact root/examples remain rejected before
 file reading. All original model, calibration and validation fields consumed by
 the adapter are documented above; extra pipeline metadata remains compatible.
+
+## Unambiguous market quantities (S05)
+
+`doctore_calculate_edge_and_stake` returns `implied_probability_sum` =
+`sum(1/decimal_odds)` and `overround_excess` = that sum minus one, both fractions.
+Legacy `overround` retains its excess convention and should not be used for new
+ambiguous integrations. For 1.50/2.80 these values are 1.0238095238 and
+0.0238095238 respectively. No-vig, EV, Kelly and policy semantics are unchanged.
+See [the independently sourced terminology decision](../docs/MARKET_QUANTITIES.md)
+and its separate binding file. The original sealed S05 literal FAIL is not
+retroactively changed.
