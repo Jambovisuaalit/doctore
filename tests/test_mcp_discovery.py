@@ -48,6 +48,13 @@ class DiscoveryTests(unittest.TestCase):
                             await session.read_resource('doctore://contracts/../../.env')
                         prompt = await session.get_prompt('review_market', {'sport': 'tennis', 'event': 'Example'})
                         self.assertIn('BLOCKED', prompt.messages[0].content.text)
+                        self.assertIn('doctore://prompts/review_market', [str(r.uri) for r in resources.resources])
+                        resource = await session.read_resource('doctore://prompts/review_market')
+                        template = json.loads(resource.contents[0].text)
+                        self.assertEqual(template['name'], 'review_market')
+                        self.assertEqual([arg['name'] for arg in template['arguments']], ['sport', 'event'])
+                        canonical = await session.get_prompt('review_market', {'sport': '{sport}', 'event': '{event}'})
+                        self.assertEqual(template['messages'][0]['content']['text'], canonical.messages[0].content.text)
             asyncio.run(inspect())
             self.assertFalse(ledger.parent.exists())
 
