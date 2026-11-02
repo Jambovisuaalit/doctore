@@ -267,7 +267,7 @@ def log_bet(params: LogBetInput) -> LogBetOutput:
             if production:
                 # The canonical historical replay and idempotent lookup share
                 # the same lock; a concurrent winner is recognized above.
-                recomputed = run_decision(params.evaluation, replay_at=decision.get("evaluated_at"))
+                recomputed = run_decision(params.evaluation, ledger_rows=rows, replay_at=decision.get("evaluated_at"))
                 if recomputed != decision:
                     return LogBetOutput(
                         logged=False, decision_id=decision_id, approved_stake=None,

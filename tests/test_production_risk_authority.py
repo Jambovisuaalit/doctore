@@ -186,6 +186,37 @@ class ProductionAuthorityTests(unittest.TestCase):
         self.assertEqual(len(self.ledger.read_bet_rows()),1)
         self.assertLessEqual(sum(float(r['approved_stake']) for r in self.ledger.read_bet_rows()),1000)
 
+    def test_identical_retry_waits_for_locked_historical_replay(self):
+        from concurrent.futures import TimeoutError
+        from threading import Event
+        from unittest.mock import patch
+        request=self.approval()
+        original=self.ledger.run_decision
+        replay_started=Event()
+        release_replay=Event()
+        def gated_replay(*args,**kwargs):
+            if kwargs.get('replay_at') is not None:
+                # A missing row snapshot would recursively acquire the flock.
+                self.assertIsNotNone(kwargs.get('ledger_rows'))
+                replay_started.set()
+                self.assertTrue(release_replay.wait(5))
+            return original(*args,**kwargs)
+        with patch.object(self.ledger,'run_decision',side_effect=gated_replay):
+            with ThreadPoolExecutor(max_workers=2) as pool:
+                first=pool.submit(self.ledger.log_bet,request)
+                self.assertTrue(replay_started.wait(5))
+                second=pool.submit(self.ledger.log_bet,request)
+                try:
+                    with self.assertRaises(TimeoutError): second.result(timeout=0.05)
+                finally:
+                    release_replay.set()
+                result=first.result(timeout=5)
+                replay=second.result(timeout=5)
+        self.assertTrue(result.logged,result.reason)
+        self.assertTrue(replay.logged,replay.reason)
+        self.assertEqual(replay.reason,'D3_APPROVAL_IDEMPOTENT_REPLAY')
+        self.assertEqual(len(self.ledger.read_bet_rows()),1)
+
     def test_concurrent_distinct_approvals_cannot_oversubscribe(self):
         requests=[self.approval() for _ in range(4)]
         self.assertEqual(len({r.decision_output['decision_id'] for r in requests}),4)
