@@ -87,6 +87,11 @@ class QualityGateOutput(BaseModel):
 class LoadPredictionInput(BaseModel):
     model_config = ConfigDict(extra="forbid")
     prediction_path: str
+    registry_manifest_path: Optional[str] = None
+    registry_calibration_path: Optional[str] = None
+    registry_oos_path: Optional[str] = None
+    registry_model_artifact_path: Optional[str] = None
+    registry_calibrator_artifact_path: Optional[str] = None
     market_id: str
     competition: str
     target_market: str
