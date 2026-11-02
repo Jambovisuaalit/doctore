@@ -4,7 +4,7 @@ from __future__ import annotations
 from typing import Optional
 import json
 
-from .evidence_gates import classify_quote
+from .evidence_gates import classify_quote, verify_registry
 from .runtime import MAX_SNAPSHOT_AGE_MINUTES, minutes_since, resolve_artifact_path
 from bet_decision_core import evaluate_bet_decision
 from model_output_adapter import to_model_output_contract
@@ -92,6 +92,25 @@ def load_model_prediction(params: LoadPredictionInput) -> LoadPredictionOutput:
     try:
         path = resolve_artifact_path(params.prediction_path)
         prediction = json.loads(path.read_text(encoding="utf-8"))
+        registry_fields = (
+            params.registry_manifest_path, params.registry_calibration_path,
+            params.registry_oos_path, params.registry_model_artifact_path,
+            params.registry_calibrator_artifact_path,
+        )
+        if any(registry_fields):
+            if not all(registry_fields):
+                return LoadPredictionOutput(ok=False, error="INCOMPLETE_REGISTRY_EVIDENCE")
+            manifest, calibration, oos = (
+                json.loads(resolve_artifact_path(item).read_text(encoding="utf-8"))
+                for item in registry_fields[:3]
+            )
+            errors = verify_registry(
+                manifest, calibration, oos, prediction,
+                model_path=resolve_artifact_path(registry_fields[3]),
+                calibrator_path=resolve_artifact_path(registry_fields[4]),
+            )
+            if errors:
+                return LoadPredictionOutput(ok=False, error="; ".join(errors))
         canonical = to_model_output_contract(
             prediction,
             market_id=params.market_id,
