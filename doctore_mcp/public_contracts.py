@@ -19,6 +19,7 @@ CONTRACT_FILES = {
     "market": "market-snapshot.schema.json",
     "portfolio": "portfolio-state.schema.json",
     "policy": "risk-policy.schema.json",
+    "artifact": "probability-prediction.schema.json",
 }
 
 

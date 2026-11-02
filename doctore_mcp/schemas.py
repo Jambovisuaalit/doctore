@@ -23,6 +23,7 @@ SCHEMA_VALIDATORS = {
         "portfolio": "portfolio-state.schema.json",
         "policy": "risk-policy.schema.json",
         "decision": "decision-output.schema.json",
+        "artifact": "probability-prediction.schema.json",
     }.items()
 }
 
@@ -87,7 +88,7 @@ class QualityGateOutput(BaseModel):
 
 class LoadPredictionInput(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    prediction_path: str
+    prediction_path: str = Field(..., description="Path inside the configured artifact root or repository examples. File contents follow x-doctore-artifact-schema; structural loading is not provenance authentication.", json_schema_extra={"x-doctore-artifact-schema": exposed_contract("artifact"), "x-doctore-artifact-schema-uri": "doctore://contracts/probability-prediction.schema.json"})
     market_id: str
     competition: str
     target_market: str
@@ -121,7 +122,9 @@ class EdgeAndStakeOutput(BaseModel):
     decision: str
     reason_codes: list[str]
     no_vig_probability: Optional[float]
-    overround: Optional[float]
+    overround: Optional[float] = Field(..., description="Legacy excess fraction: sum(1/decimal_odds)-1. Ambiguous name retained for compatibility; prefer overround_excess or implied_probability_sum.")
+    implied_probability_sum: Optional[float] = Field(default=None, description="Booksum B=sum(1/decimal_odds) across the complete outcome set, as a fraction (1.0238 means 102.38%). Not a model probability.")
+    overround_excess: Optional[float] = Field(default=None, description="Excess fraction B-1; 0.0238 means 2.38 percentage points above 100%. Not realized profit or theoretical balanced hold.")
     ev: Optional[float]
     edge_vs_market_pp: Optional[float]
     full_kelly: Optional[float]

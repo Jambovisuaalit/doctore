@@ -334,3 +334,80 @@ The fourteen-tool table above includes
 This is a local stdio server. It does not provide a hosted HTTP endpoint, remote
 authentication, automatic bookmaker access, or trained production models. Optional
 providers retain their documented credential and verification requirements.
+
+## Complete public prediction artifact contract (S04)
+
+`doctore_load_model_prediction` reads a JSON **file**, not a canonical model-output
+object. The complete file contract is published inline under
+`prediction_path.x-doctore-artifact-schema` in `tools/list`, and as the public
+resource `doctore://contracts/probability-prediction.schema.json`. Required
+probabilities belong under **calibration**, not model, market or the root.
+The loader validates this public contract before adapting it, and reports exact
+paths such as `artifact.calibration.probability_selected_raw` on failure.
+
+The following complete synthetic document can be saved inside the configured
+artifact root and loaded without reverse-engineering errors:
+
+```json
+{
+  "output_schema_version": "doctore.probability-prediction.v1",
+  "event_id": "public-synthetic-example",
+  "sport": "WNBA",
+  "market": {
+    "market_type": "moneyline",
+    "period": "full_game",
+    "line": null,
+    "selection": "Example Home"
+  },
+  "model": {
+    "model_name": "synthetic-model",
+    "model_version": "1.0",
+    "prediction_generated_at": "2026-01-02T12:00:00Z",
+    "feature_cutoff_at": "2026-01-02T11:00:00Z",
+    "training_cutoff_at": "2025-12-01T00:00:00Z",
+    "feature_schema_version": "synthetic.v1",
+    "model_artifact_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  },
+  "calibration": {
+    "status": "validated",
+    "probability_selected_raw": 0.58,
+    "probability_selected_calibrated": 0.57,
+    "calibration_artifact_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+  },
+  "validation": {
+    "validation_period_start": "2025-01-01",
+    "validation_period_end": "2025-11-30",
+    "sample_size": 600,
+    "model_brier_score": 0.21,
+    "model_log_loss": 0.61,
+    "model_ece": 0.04
+  }
+}
+```
+
+Call `doctore_load_model_prediction` with `params` containing `prediction_path`
+(the saved absolute path), `market_id="public-synthetic-market"`,
+`competition="WNBA"`, `target_market="full_game_moneyline"`, and
+`settlement_rules="full_game_including_overtime"`. Returned provenance values
+come from this document; loading never invents them. Unknown calibration status
+maps to `unknown`; missing calibration/validation metadata is rejected.
+
+This example has deliberately historical timestamps and fake artifact hashes.
+It is input-contract documentation, not a current prediction or independent
+calibration/provenance proof. The loader alone cannot authenticate a caller's
+claims. Optional registry verification remains a separate gate; betting decisions
+still require freshness, identity, evidence, context and risk checks. Path traversal
+and paths outside the configured artifact root/examples remain rejected before
+file reading. All original model, calibration and validation fields consumed by
+the adapter are documented above; extra pipeline metadata remains compatible.
+
+## Unambiguous market quantities (S05)
+
+`doctore_calculate_edge_and_stake` returns `implied_probability_sum` =
+`sum(1/decimal_odds)` and `overround_excess` = that sum minus one, both fractions.
+Legacy `overround` retains its excess convention and should not be used for new
+ambiguous integrations. For 1.50/2.80 these values are 1.0238095238 and
+0.0238095238 respectively. No-vig, EV, Kelly and policy semantics are unchanged.
+See [the independently sourced terminology decision](../docs/MARKET_QUANTITIES.md)
+and its separate binding file. The original sealed S05 literal FAIL is not
+retroactively changed.

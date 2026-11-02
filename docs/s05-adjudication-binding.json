@@ -1,0 +1,29 @@
+{
+  "schema_version": "doctore.s05-adjudication-binding.v1",
+  "scenario": "S05",
+  "immutable_task_sha256": "495e2c1ae6ba3ad601d155e68d9fbec0d0bf00a4fc6d0b7b2a1218474bc61e94",
+  "independent_adjudication_sha256": "ec761fc82b1f94366f696f325594d27f8d23035a2a7ed2552b4fe63a506cceed",
+  "original_literal_run_sha": "91008b045f973e62ffb7b0a6ef7fee498d0a3a77",
+  "original_literal_result": "FAIL (historical; unchanged)",
+  "original_expected_term": "overround",
+  "original_expected_quantity": "sum_i(1/decimal_odds_i)",
+  "new_public_field": "implied_probability_sum",
+  "legacy_field": "overround",
+  "legacy_field_quantity": "sum_i(1/decimal_odds_i)-1",
+  "example_expected_sum": 1.0238095238095237,
+  "example_expected_excess": 0.023809523809523808,
+  "tolerance": 0.001,
+  "other_original_requirements_unchanged": [
+    "proportional no-vig probabilities",
+    "probabilities sum to 1",
+    "EV=p*odds-1",
+    "original tolerance"
+  ],
+  "sources": [
+    "https://www.betfair.com.au/hub/education/overrounds/",
+    "https://www.betwise.co.uk/publications/betfaiR.pdf",
+    "https://support.pinnacle.com/hc/en-us/articles/44854177573009-What-is-a-betting-margin"
+  ],
+  "is_execution_result": false,
+  "rule": "Any new adjudicated run is a separate dated record, never a replacement for historical literal FAIL. Neither the task file nor original rubric is edited."
+}

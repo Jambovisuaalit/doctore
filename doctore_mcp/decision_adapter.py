@@ -88,10 +88,17 @@ def check_data_quality(params: QualityGateInput) -> QualityGateOutput:
     )
 
 
+def _reject_nonfinite(value: str):
+    raise ValueError(f"non-finite JSON number is not permitted: {value}")
+
+
 def load_model_prediction(params: LoadPredictionInput) -> LoadPredictionOutput:
     try:
         path = resolve_artifact_path(params.prediction_path)
-        prediction = json.loads(path.read_text(encoding="utf-8"))
+        prediction = json.loads(path.read_text(encoding="utf-8"), parse_constant=_reject_nonfinite)
+        artifact_errors = schema_errors("artifact", prediction)
+        if artifact_errors:
+            return LoadPredictionOutput(ok=False, error="; ".join(artifact_errors))
         registry_fields = (
             params.registry_manifest_path, params.registry_calibration_path,
             params.registry_oos_path, params.registry_model_artifact_path,
@@ -135,6 +142,8 @@ def calculate_edge_and_stake(params: DecisionInput) -> EdgeAndStakeOutput:
         reason_codes=decision["reason_codes"],
         no_vig_probability=decision["market"]["no_vig_probability"],
         overround=decision["market"]["overround"],
+        implied_probability_sum=(1.0 + decision["market"]["overround"]) if decision["market"]["overround"] is not None else None,
+        overround_excess=decision["market"]["overround"],
         ev=decision["economics"]["ev"],
         edge_vs_market_pp=decision["economics"]["edge_vs_market_pp"],
         full_kelly=decision["economics"]["full_kelly"],
