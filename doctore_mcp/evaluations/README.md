@@ -1,32 +1,28 @@
-# Doctore MCP blind evaluation gate
+# Doctore MCP independent blind evaluation gate
 
-No blind MCP evaluation is committed yet.
+## Current gate: 14 exposed MCP tools
 
-The previous `readonly_evaluation.xml` was removed because it was authored from implementation code and unit-test fixtures. It was a contract regression suite, not a blind evaluation of whether an LLM can use the documented tools effectively.
+The canonical list is `EXPECTED_TOOLS` in `doctore_mcp/scripts/run_inspector_smoke_v2.py`. Earlier 8/8 and 12/12 counts are obsolete. No independent blind evaluation result is claimed by this document.
 
-Regression coverage now lives in:
+### Prerequisites — same exact commit
 
-- `doctore_mcp/compatibility/golden_fixtures.json`
-- `doctore_mcp/compatibility/tool_contract_diff.md`
-- `tests/test_doctore_mcp_differential.py`
+1. Full unit suite: PASS.
+2. Baseline hash verification and golden differential suite: PASS.
+3. Real stdio MCP Inspector `tools/list`: **14/14**.
+4. Real stdio MCP Inspector `tools/call`: **14/14**, no protocol errors.
+5. Freeze public tool descriptions, JSON schemas, commit SHA and environment configuration.
+6. CI logs and exact-SHA verification artifact available.
 
-## Preconditions for a new blind evaluation
+### Independent evaluation protocol
 
-A new evaluation XML may be created only after all of the following are evidenced on the same commit:
+- Author tasks **only** from published README, public tool descriptions and generated schemas. Do not inspect implementation code, golden fixtures, unit tests, or expected-answer internals when designing the blind tasks.
+- Use a fresh isolated client session, synthetic model artifacts, synthetic odds and a temporary ledger; no bookmaker execution, paid provider calls, real account state or write operations to production paths.
+- Include read-only tasks covering parsing, data quality, model provenance, no-vig/EV calculations, risk caps, context rejection, slate fail-closed behavior, portfolio read, tennis research-only and NHL source failure behavior.
+- Evaluate schema-validity, correct tool selection, refusal to invent probabilities, fail-closed behavior and evidence-based explanation. Grade with a separate evaluator and store task definitions, output traces, rubric, model/runtime version and pass/fail summary.
+- Keep approval, placement and settlement mutation flows in isolated deterministic regression tests; do not include destructive writes in the blind evaluation.
 
-1. Full repository unit suite passes.
-2. MCP Inspector smoke suite returns `8/8` tools over stdio.
-3. Tool descriptions and generated input/output schemas are frozen for the evaluation run.
-4. The evaluation author inspects only public documentation, tool names, descriptions and schemas—not the MCP implementation source or existing unit fixtures.
-5. Questions are read-only, independent, non-destructive and have stable scalar answers.
+### Acceptance
 
-## Required evidence
+Independent evaluation is **NOT RUN / HOLD** until a separate evaluator publishes reproducible traces and rubric results on the same frozen commit. CI/Inspector passing alone must never be represented as independent evaluation success or profitable prediction validation.
 
-```text
-unit_tests: PASS
-inspector_tools_list: 8/8
-inspector_tools_call: 8/8
-blind_eval_created_after_gate: true
-```
-
-Until these conditions are met, this directory intentionally contains no evaluation XML.
+Regression coverage remains in `doctore_mcp/compatibility/golden_fixtures.json`, `doctore_mcp/compatibility/tool_contract_diff.md`, and `tests/test_doctore_mcp_differential.py`.
