@@ -42,6 +42,9 @@ BET_LOG_FIELDS += [
     "evaluation_at", "max_placement_age_seconds", "currency", "approved_odds", "price_captured_at",
 ]
 
+D3_PRE_AUTHORITY_FIELDS = BET_LOG_FIELDS.copy()
+BET_LOG_FIELDS += ["risk_authority_json"]
+
 try:
     import fcntl  # type: ignore
 except ImportError:  # pragma: no cover - Windows
@@ -93,7 +96,7 @@ def read_bet_rows() -> list[dict[str, str]]:
     with BET_LOG_PATH.open(newline="", encoding="utf-8") as handle:
         reader = csv.DictReader(handle)
         legacy_fields = PRE_PLACEMENT_LOG_FIELDS[:-2]
-        if reader.fieldnames not in (BET_LOG_FIELDS, PRE_PLACEMENT_LOG_FIELDS, legacy_fields):
+        if reader.fieldnames not in (BET_LOG_FIELDS, D3_PRE_AUTHORITY_FIELDS, PRE_PLACEMENT_LOG_FIELDS, legacy_fields):
             raise ValueError(
                 "DOCTORE_BET_LOG uses an incompatible legacy schema; migrate it before using this server"
             )
@@ -118,6 +121,12 @@ def write_bet_rows(rows: list[dict[str, Any]]) -> None:
             handle.flush()
             os.fsync(handle.fileno())
         os.replace(temp_name, BET_LOG_PATH)
+        if os.name == "posix":
+            directory = os.open(BET_LOG_PATH.parent, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
+            try:
+                os.fsync(directory)
+            finally:
+                os.close(directory)
     finally:
         if os.path.exists(temp_name):
             os.unlink(temp_name)
@@ -188,7 +197,19 @@ def log_bet(params: LogBetInput) -> LogBetOutput:
     decision_id = str(decision.get("decision_id", ""))
     if errors:
         return LogBetOutput(logged=False, decision_id=decision_id, approved_stake=None, reason="; ".join(errors), log_path=str(BET_LOG_PATH))
-    recomputed = run_decision(params.evaluation)
+    from .risk_authority import mode as execution_mode
+    production = execution_mode() == "production"
+    request_sha = content_sha256(params.model_dump(mode="json"))
+    if production:
+        with log_lock():
+            existing = next((row for row in read_bet_rows() if row["decision_id"] == decision_id), None)
+            if existing:
+                try:
+                    same = json.loads(existing["risk_authority_json"])["request_sha256"] == request_sha
+                except (ValueError, KeyError):
+                    same = False
+                return LogBetOutput(logged=same, decision_id=decision_id, approved_stake=float(existing["approved_stake"]) if same else None, reason="D3_APPROVAL_IDEMPOTENT_REPLAY" if same else "D3_APPROVAL_REQUEST_CONFLICT", placement_status="APPROVED" if same else None, log_path=str(BET_LOG_PATH))
+    recomputed = run_decision(params.evaluation, replay_at=decision.get("evaluated_at")) if production else run_decision(params.evaluation)
     if recomputed != decision:
         return LogBetOutput(
             logged=False, decision_id=decision_id, approved_stake=None,
@@ -243,10 +264,18 @@ def log_bet(params: LogBetInput) -> LogBetOutput:
     with log_lock():
         try:
             rows = read_bet_rows()
-            if any(existing["decision_id"] == decision_id for existing in rows):
+            existing = next((existing for existing in rows if existing["decision_id"] == decision_id), None)
+            if existing:
+                if production and json.loads(existing["risk_authority_json"])["request_sha256"] == request_sha:
+                    return LogBetOutput(logged=True, decision_id=decision_id, approved_stake=float(existing["approved_stake"]), reason="D3_APPROVAL_IDEMPOTENT_REPLAY", placement_status="APPROVED", log_path=str(BET_LOG_PATH))
                 raise ValueError(f"decision_id already logged: {decision_id}")
-            live_evaluation = current_approval_evaluation(params, rows, approval_time())
-            live_decision = run_decision(live_evaluation)
+            live_evaluation = params.evaluation.model_copy(deep=True) if production else current_approval_evaluation(params, rows, approval_time())
+            live_evaluation.evaluated_at = approval_time().isoformat() if production else live_evaluation.evaluated_at
+            live_decision = run_decision(live_evaluation, ledger_rows=rows) if production else run_decision(live_evaluation)
+            if production:
+                row["risk_authority_json"] = line_to_csv({"authority": live_decision["audit"].get("risk_authority"), "request_sha256": request_sha})
+                row["max_placement_age_seconds"] = live_decision["audit"]["risk_authority"]["market_max_age_seconds"]
+
             if live_decision["decision"] != "BET":
                 raise ValueError("APPROVAL_REVALIDATION_BLOCKED: " + ", ".join(live_decision["reason_codes"]))
             if approved > float(live_decision["staking"]["final_stake"]) + 1e-12:

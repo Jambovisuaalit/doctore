@@ -38,6 +38,11 @@ def schema_errors(name: str, payload: Mapping[str, Any]) -> list[str]:
     ]
 
 
+def execution_mode() -> str:
+    from .risk_authority import mode
+    return mode()
+
+
 class Sport(str, Enum):
     MLB = "mlb"
     KBO = "kbo"
@@ -116,6 +121,7 @@ class DecisionInput(BaseModel):
 
 
 class EdgeAndStakeOutput(BaseModel):
+    execution_mode: Literal["research", "production"] = Field(default_factory=execution_mode)
     schema_version: str = "doctore.edge-and-stake.v2"
     decision_id: str
     decision: str
@@ -128,9 +134,11 @@ class EdgeAndStakeOutput(BaseModel):
     recommended_stake: float
     staking: dict[str, Any]
     human_approval_required: bool
+    risk_authority: Optional[dict[str, Any]] = None
 
 
 class EvaluateOutput(BaseModel):
+    execution_mode: Literal["research", "production"] = Field(default_factory=execution_mode)
     schema_version: str = "doctore.mcp-evaluation.v2"
     decision_output: dict[str, Any]
     recommended_stake: float
@@ -151,6 +159,7 @@ class LogBetInput(BaseModel):
 
 
 class LogBetOutput(BaseModel):
+    execution_mode: Literal["research", "production"] = Field(default_factory=execution_mode)
     placement_status: Optional[str] = None
     logged: bool
     decision_id: str

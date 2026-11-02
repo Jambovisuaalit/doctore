@@ -20,7 +20,7 @@ from .schemas import (
 )
 
 
-def run_decision(params: DecisionInput) -> dict:
+def _canonical_decision(params: DecisionInput) -> dict:
     context = params.sport_context
     if params.market_snapshot.get("sport") == "TENNIS":
         from .tennis_data import tennis_mode
@@ -37,6 +37,40 @@ def run_decision(params: DecisionInput) -> dict:
         evaluated_at=params.evaluated_at,
         sport_context=context,
     )
+
+
+def run_decision(params: DecisionInput, *, ledger_rows=None, replay_at=None) -> dict:
+    from . import risk_authority as authority
+    if authority.mode() == "research":
+        return _canonical_decision(params)
+    from datetime import datetime, timezone
+    from .ledger import log_lock, read_bet_rows
+    now = datetime.now(timezone.utc)
+    if ledger_rows is None:
+        with log_lock():
+            return run_decision(params, ledger_rows=read_bet_rows(), replay_at=replay_at)
+    try:
+        prepared, provenance = authority.prepare(params, ledger_rows, now)
+        # Replay is internal approval comparison only, never a client mode or clock.
+        prepared.evaluated_at = replay_at or now.isoformat()
+        decision = _canonical_decision(prepared)
+        decision = authority.finalize(decision, provenance, prepared.risk_policy["minimum_stake"], prepared.portfolio_state["stake_increment"])
+        errors = schema_errors("decision", decision)
+        if errors:
+            raise authority.AuthorityError("D3_OUTPUT_INVALID")
+        return decision
+    except (ValueError, TypeError, KeyError, OSError) as exc:
+        decision = _canonical_decision(params)
+        decision["decision"] = "BLOCKED"
+        decision["reason_codes"] = ["D3_AUTHORITY_BLOCKED"]
+        decision["staking"]["final_stake"] = 0.0
+        decision["staking"]["stake_fraction"] = 0.0
+        reason = str(exc) if isinstance(exc, authority.AuthorityError) else "D3_INPUT_INVALID"
+        decision["diagnostics"].append(reason)
+        decision["audit"]["risk_authority"] = {"mode": "production", "error_code": reason}
+        from .runtime import content_sha256
+        decision["decision_id"] = content_sha256(decision)
+        return decision
 
 
 def check_data_quality(params: QualityGateInput) -> QualityGateOutput:
@@ -58,6 +92,15 @@ def check_data_quality(params: QualityGateInput) -> QualityGateOutput:
         except (ValueError, TypeError) as exc:
             reasons.append(f"invalid market timestamps: {exc}")
     limit = params.max_age_minutes or MAX_SNAPSHOT_AGE_MINUTES
+    from . import risk_authority as authority
+    if authority.mode() == "production":
+        from datetime import datetime, timezone
+        try:
+            policy, _ = authority._policy(datetime.now(timezone.utc))
+            limit = min(limit, policy["risk_policy"]["freshness_seconds"]["market_snapshot"] / 60)
+        except (ValueError, OSError, KeyError, TypeError):
+            return QualityGateOutput(status="BLOCKED", reasons=["D3_AUTHORITY_BLOCKED"], age_minutes=None)
+
     if age < 0:
         reasons.append(f"snapshot timestamp is {-age:.1f} minutes in the future")
     elif age > limit:
@@ -140,6 +183,7 @@ def calculate_edge_and_stake(params: DecisionInput) -> EdgeAndStakeOutput:
         full_kelly=decision["economics"]["full_kelly"],
         recommended_stake=float(recommended or 0.0),
         staking=decision["staking"],
+        risk_authority=decision["audit"].get("risk_authority"),
         human_approval_required=decision["human_approval_required"],
     )
 
