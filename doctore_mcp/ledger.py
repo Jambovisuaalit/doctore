@@ -200,22 +200,17 @@ def log_bet(params: LogBetInput) -> LogBetOutput:
     from .risk_authority import mode as execution_mode
     production = execution_mode() == "production"
     request_sha = content_sha256(params.model_dump(mode="json"))
-    if production:
-        with log_lock():
-            existing = next((row for row in read_bet_rows() if row["decision_id"] == decision_id), None)
-            if existing:
-                try:
-                    same = json.loads(existing["risk_authority_json"])["request_sha256"] == request_sha
-                except (ValueError, KeyError):
-                    same = False
-                return LogBetOutput(logged=same, decision_id=decision_id, approved_stake=float(existing["approved_stake"]) if same else None, reason="D3_APPROVAL_IDEMPOTENT_REPLAY" if same else "D3_APPROVAL_REQUEST_CONFLICT", placement_status="APPROVED" if same else None, log_path=str(BET_LOG_PATH))
-    recomputed = run_decision(params.evaluation, replay_at=decision.get("evaluated_at")) if production else run_decision(params.evaluation)
-    if recomputed != decision:
-        return LogBetOutput(
-            logged=False, decision_id=decision_id, approved_stake=None,
-            reason="decision output does not match the canonical decision recomputed from evaluation inputs",
-            log_path=str(BET_LOG_PATH),
-        )
+    # Research can validate before the ledger lock. Production must not
+    # recompute a historical decision outside the lock: another approval may
+    # reserve capacity between the replay check and idempotency lookup.
+    if not production:
+        recomputed = run_decision(params.evaluation)
+        if recomputed != decision:
+            return LogBetOutput(
+                logged=False, decision_id=decision_id, approved_stake=None,
+                reason="decision output does not match the canonical decision recomputed from evaluation inputs",
+                log_path=str(BET_LOG_PATH),
+            )
     market_snapshot = params.evaluation.market_snapshot
     market_errors = schema_errors("market", market_snapshot)
     if market_errors:
@@ -269,6 +264,16 @@ def log_bet(params: LogBetInput) -> LogBetOutput:
                 if production and json.loads(existing["risk_authority_json"])["request_sha256"] == request_sha:
                     return LogBetOutput(logged=True, decision_id=decision_id, approved_stake=float(existing["approved_stake"]), reason="D3_APPROVAL_IDEMPOTENT_REPLAY", placement_status="APPROVED", log_path=str(BET_LOG_PATH))
                 raise ValueError(f"decision_id already logged: {decision_id}")
+            if production:
+                # The canonical historical replay and idempotent lookup share
+                # the same lock; a concurrent winner is recognized above.
+                recomputed = run_decision(params.evaluation, replay_at=decision.get("evaluated_at"))
+                if recomputed != decision:
+                    return LogBetOutput(
+                        logged=False, decision_id=decision_id, approved_stake=None,
+                        reason="decision output does not match the canonical decision recomputed from evaluation inputs",
+                        log_path=str(BET_LOG_PATH),
+                    )
             live_evaluation = params.evaluation.model_copy(deep=True) if production else current_approval_evaluation(params, rows, approval_time())
             live_evaluation.evaluated_at = approval_time().isoformat() if production else live_evaluation.evaluated_at
             live_decision = run_decision(live_evaluation, ledger_rows=rows) if production else run_decision(live_evaluation)
