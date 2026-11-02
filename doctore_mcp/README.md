@@ -249,3 +249,56 @@ recommendation. Canonical approval returns TENNIS_RESEARCH_ONLY. Sportradar
 acquisition is disabled unless the operator explicitly opts into verified_prematch;
 its missing credential is not a default-workflow error. See
 [TENNIS_EVENT_GATE.md](../docs/TENNIS_EVENT_GATE.md) for inputs and actual source-read evidence.
+
+## Public nested payload contracts (D1)
+
+The public `tools/list` input schemas for `doctore_evaluate_bet`,
+`doctore_calculate_edge_and_stake`, and nested approval evaluation
+now include the complete **inline** canonical object schemas for
+`model_output`, `market_snapshot`, `portfolio_state`, and
+`risk_policy`. The authoritative validation contracts remain in
+`contracts/*.schema.json`; the inline MCP representation is generated
+from those files at startup and does not alter decision semantics.
+
+- All timestamps must be timezone-aware ISO-8601. The example generator
+  supplies fresh synthetic timestamps; a historical timestamp will fail
+  the freshness gate when evaluated at the current time.
+- `risk_policy` is currently **caller supplied**. This is suitable only
+  for research/simulation until a separate server-owned production
+  policy authority is implemented and verified (Issue #65 D3).
+- For a complete synthetic example of every one of the 14 tools, see
+  [PUBLIC_CONTRACT_EXAMPLES.md](PUBLIC_CONTRACT_EXAMPLES.md).
+- No production betting or automatic bookmaker execution is authorized.
+
+### Pinnacle copied-table format
+
+Each source row is TAB-separated and has exactly 14 columns.
+For MLB/KBO/NPB, in order:
+
+```text
+away home time ml_away ml_home rl_away_label rl_away_price rl_home_label rl_home_price total_line total_over total_under btn href
+```
+
+For WNBA/NBA, in order:
+
+```text
+away home time spread_away_label spread_away_price spread_home_label spread_home_price ml_away ml_home total_line total_over total_under btn href
+```
+
+The fields above are column names, not space-delimited input. The `time`
+field accepts `HH:MM`, `HH.MM`, or supported full date-time forms.
+Decimal odds must exceed 1; the two spread/run-line labels must be
+opposites. A valid game produces six selected-side snapshots.
+
+### Model artifact format
+
+`doctore_load_model_prediction` reads a JSON file from the configured
+`DOCTORE_MODEL_ARTIFACT_ROOT` or repository `examples/`. The input is
+a **rich** `doctore.probability-prediction.v1` document, distinct from
+the canonical `doctore.model-output.v1` returned by the tool.
+Its required top-level objects are `market`, `model`, `calibration`,
+and `validation`; the full synthetic example is generated in
+`doctore_mcp/public_examples.py`. The loader binds the explicit
+`market_id`, `competition`, `target_market`, and `settlement_rules`
+parameters to the resulting canonical output. No fabricated model
+probabilities are permitted in production.

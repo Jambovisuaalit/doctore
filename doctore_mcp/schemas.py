@@ -10,6 +10,7 @@ from jsonschema import Draft202012Validator, FormatChecker
 from pydantic import BaseModel, ConfigDict, Field
 
 from .runtime import REPO
+from .public_contracts import exposed_contract
 
 SCHEMA_VALIDATORS = {
     name: Draft202012Validator(
@@ -97,10 +98,10 @@ class LoadPredictionOutput(BaseModel):
 
 class DecisionInput(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    model_output: dict[str, Any]
-    market_snapshot: dict[str, Any]
-    portfolio_state: dict[str, Any]
-    risk_policy: dict[str, Any]
+    model_output: dict[str, Any] = Field(..., json_schema_extra=exposed_contract("model"))
+    market_snapshot: dict[str, Any] = Field(..., json_schema_extra=exposed_contract("market"))
+    portfolio_state: dict[str, Any] = Field(..., json_schema_extra=exposed_contract("portfolio"))
+    risk_policy: dict[str, Any] = Field(..., json_schema_extra=exposed_contract("policy"))
     evaluated_at: str
     sport_context: Optional[dict[str, Any]] = None
 
