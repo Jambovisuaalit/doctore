@@ -47,6 +47,10 @@ export DOCTORE_MODEL_ARTIFACT_ROOT="$HOME/.local/share/doctore/artifacts"
 python doctore_mcp/server.py
 ```
 
+## Current tool inventory and verification contract
+
+The canonical tool inventory is `EXPECTED_TOOLS` in `doctore_mcp/scripts/run_inspector_smoke_v2.py` (14 tools). The list below must match it. Run `python doctore_mcp/scripts/run_inspector_smoke.py --repo "$PWD"` to verify real stdio `tools/list` and `tools/call` for every tool. CI must report 14/14 on the exact commit; older 8/8 and 12/12 references are historical, not acceptance criteria.
+
 ## Tools
 
 | Tool | Access | Contract |
@@ -63,6 +67,8 @@ python doctore_mcp/server.py
 | `doctore_run_context_gate` | read | Sport context without probability changes |
 | `doctore_run_slate` | mixed | Existing slate orchestration; explicit approvals required for logging |
 | `doctore_tennis_data` | read/network | Optional explicit ATP/WTA source adapter; no probabilities |
+| `doctore_scan_nhl_totals` | read | NHL totals scanner; no automatic bet placement |
+| `doctore_collect_nhl_totals` | read/network | NHL totals source collection with provider and freshness controls |
 
 All outputs are structured objects, not JSON-encoded strings.
 
@@ -115,11 +121,11 @@ python -m unittest discover -s tests -p 'test_*.py' -v
 python doctore_mcp/scripts/run_inspector_smoke.py --repo "$PWD"
 ```
 
-The Inspector script pins `@modelcontextprotocol/inspector@0.21.2`, runs `tools/list`, and calls all twelve tools through a real stdio MCP connection using isolated ledger and artifact paths.
+The Inspector script pins `@modelcontextprotocol/inspector@0.21.2`, runs `tools/list`, and calls all fourteen tools through a real stdio MCP connection using isolated ledger and artifact paths.
 
 ## Blind evaluation gate
 
-No blind evaluation XML is committed until the full unit suite and Inspector **12/12** pass on the same commit. See `doctore_mcp/evaluations/README.md`. Contract-derived cases belong to golden regression tests, not to the blind evaluation.
+No blind evaluation XML is committed until the full unit suite and Inspector **14/14** pass on the same commit. See `doctore_mcp/evaluations/README.md`. Contract-derived cases belong to golden regression tests, not to the blind evaluation.
 
 ## Result without closing prices
 
@@ -161,7 +167,7 @@ For a smoke check without npm, run:
 python doctore_mcp/scripts/run_stdio_smoke.py --repo "$PWD"
 ```
 
-This uses the official Python MCP stdio client, invokes the same twelve tool
+This uses the official Python MCP stdio client, invokes the same fourteen tool
 cases in isolated state and rejects protocol-level tool errors. Tennis network
 access is explicitly disabled in the smoke environment.
 
