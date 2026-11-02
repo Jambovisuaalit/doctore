@@ -147,8 +147,9 @@ jobs:
               "schema_version": "doctore.p0-verification.v1",
               "commit_sha": os.environ["GITHUB_SHA"],
               "unit_suite": "PASS",
-              "mcp_inspector": "12/12 PASS",
+              "mcp_inspector": "14/14 PASS",
               "same_sha_verified": True,
+              "blind_independent_evaluation": "NOT_RUN",
           }
           Path("results").mkdir(exist_ok=True)
           Path("results/p0-verification.json").write_text(
