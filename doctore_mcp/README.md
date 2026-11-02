@@ -334,3 +334,11 @@ The fourteen-tool table above includes
 This is a local stdio server. It does not provide a hosted HTTP endpoint, remote
 authentication, automatic bookmaker access, or trained production models. Optional
 providers retain their documented credential and verification requirements.
+
+## D3 draft production authority
+
+Research remains the default. The opt-in CLI production authority authenticates
+operator policy and exact input attestations, clamps caller policy, and
+revalidates reservations under the approval lock. This is not a live betting GO.
+See [PRODUCTION_RISK_AUTHORITY.md](../docs/PRODUCTION_RISK_AUTHORITY.md) for the
+trust boundary, publication protocol, additive contracts and remaining gates.
