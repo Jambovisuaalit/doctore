@@ -1,0 +1,192 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://doctore.local/schemas/probability-prediction.schema.json",
+  "title": "Doctore public rich prediction artifact",
+  "description": "Complete input file contract for doctore_load_model_prediction. Schema conformance is structural, not proof that supplied model/calibration claims are authentic. Additional pipeline metadata is retained/ignored by the existing adapter; binding parameters provide competition, market_id, target_market and settlement_rules.",
+  "type": "object",
+  "required": [
+    "event_id",
+    "sport",
+    "market",
+    "model",
+    "calibration",
+    "validation"
+  ],
+  "properties": {
+    "output_schema_version": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "\\S"
+    },
+    "event_id": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "\\S"
+    },
+    "sport": {
+      "enum": [
+        "MLB",
+        "KBO",
+        "NPB",
+        "TENNIS",
+        "SOCCER",
+        "NBA",
+        "WNBA",
+        "NFL"
+      ]
+    },
+    "market": {
+      "type": "object",
+      "required": [
+        "market_type",
+        "period",
+        "line",
+        "selection"
+      ],
+      "properties": {
+        "market_type": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "\\S"
+        },
+        "period": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "\\S"
+        },
+        "line": {
+          "type": [
+            "number",
+            "string",
+            "null"
+          ]
+        },
+        "selection": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "\\S"
+        }
+      },
+      "additionalProperties": true
+    },
+    "model": {
+      "type": "object",
+      "required": [
+        "model_name",
+        "model_version",
+        "prediction_generated_at",
+        "feature_cutoff_at",
+        "training_cutoff_at",
+        "feature_schema_version",
+        "model_artifact_sha256"
+      ],
+      "properties": {
+        "model_name": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "\\S"
+        },
+        "model_version": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "\\S"
+        },
+        "prediction_generated_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "feature_cutoff_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "training_cutoff_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "feature_schema_version": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "\\S"
+        },
+        "model_artifact_sha256": {
+          "type": "string",
+          "pattern": "^[a-fA-F0-9]{64}$"
+        }
+      },
+      "additionalProperties": true
+    },
+    "calibration": {
+      "type": "object",
+      "required": [
+        "status",
+        "probability_selected_raw",
+        "probability_selected_calibrated",
+        "calibration_artifact_sha256"
+      ],
+      "properties": {
+        "status": {
+          "type": "string",
+          "description": "validated maps to canonical validated; provisional/degraded/other strings map to unknown and cannot establish calibration."
+        },
+        "probability_selected_raw": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "exclusiveMaximum": 1
+        },
+        "probability_selected_calibrated": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "exclusiveMaximum": 1
+        },
+        "calibration_artifact_sha256": {
+          "type": "string",
+          "pattern": "^[a-fA-F0-9]{64}$"
+        }
+      },
+      "additionalProperties": true
+    },
+    "validation": {
+      "type": "object",
+      "required": [
+        "validation_period_start",
+        "validation_period_end",
+        "sample_size",
+        "model_brier_score",
+        "model_log_loss",
+        "model_ece"
+      ],
+      "properties": {
+        "validation_period_start": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "\\S"
+        },
+        "validation_period_end": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "\\S"
+        },
+        "sample_size": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "model_brier_score": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "model_log_loss": {
+          "type": "number",
+          "minimum": 0
+        },
+        "model_ece": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        }
+      },
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": true
+}

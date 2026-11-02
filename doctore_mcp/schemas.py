@@ -23,6 +23,7 @@ SCHEMA_VALIDATORS = {
         "portfolio": "portfolio-state.schema.json",
         "policy": "risk-policy.schema.json",
         "decision": "decision-output.schema.json",
+        "artifact": "probability-prediction.schema.json",
     }.items()
 }
 
@@ -87,7 +88,7 @@ class QualityGateOutput(BaseModel):
 
 class LoadPredictionInput(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    prediction_path: str
+    prediction_path: str = Field(..., description="Path inside the configured artifact root or repository examples. File contents follow x-doctore-artifact-schema; structural loading is not provenance authentication.", json_schema_extra={"x-doctore-artifact-schema": exposed_contract("artifact"), "x-doctore-artifact-schema-uri": "doctore://contracts/probability-prediction.schema.json"})
     market_id: str
     competition: str
     target_market: str

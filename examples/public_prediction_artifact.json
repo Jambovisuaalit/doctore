@@ -1,0 +1,34 @@
+{
+  "output_schema_version": "doctore.probability-prediction.v1",
+  "event_id": "public-synthetic-example",
+  "sport": "WNBA",
+  "market": {
+    "market_type": "moneyline",
+    "period": "full_game",
+    "line": null,
+    "selection": "Example Home"
+  },
+  "model": {
+    "model_name": "synthetic-model",
+    "model_version": "1.0",
+    "prediction_generated_at": "2026-01-02T12:00:00Z",
+    "feature_cutoff_at": "2026-01-02T11:00:00Z",
+    "training_cutoff_at": "2025-12-01T00:00:00Z",
+    "feature_schema_version": "synthetic.v1",
+    "model_artifact_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  },
+  "calibration": {
+    "status": "validated",
+    "probability_selected_raw": 0.58,
+    "probability_selected_calibrated": 0.57,
+    "calibration_artifact_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+  },
+  "validation": {
+    "validation_period_start": "2025-01-01",
+    "validation_period_end": "2025-11-30",
+    "sample_size": 600,
+    "model_brier_score": 0.21,
+    "model_log_loss": 0.61,
+    "model_ece": 0.04
+  }
+}
