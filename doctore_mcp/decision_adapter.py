@@ -4,6 +4,7 @@ from __future__ import annotations
 from typing import Optional
 import json
 
+from .evidence_gates import classify_quote
 from .runtime import MAX_SNAPSHOT_AGE_MINUTES, minutes_since, resolve_artifact_path
 from bet_decision_core import evaluate_bet_decision
 from model_output_adapter import to_model_output_contract
@@ -46,6 +47,16 @@ def check_data_quality(params: QualityGateInput) -> QualityGateOutput:
     except (TypeError, ValueError) as exc:
         return QualityGateOutput(status="BLOCKED", reasons=[f"invalid snapshot_at: {exc}"], age_minutes=None)
 
+    market_state = None
+    if (params.last_update is None) != (params.commence_time is None):
+        reasons.append("last_update and commence_time must be supplied together")
+    elif params.last_update is not None:
+        try:
+            market_state = classify_quote(params.last_update, params.commence_time, live_verified=params.live_verified)
+            if market_state != "PREMATCH":
+                reasons.append(f"non-pregame market state: {market_state}")
+        except (ValueError, TypeError) as exc:
+            reasons.append(f"invalid market timestamps: {exc}")
     limit = params.max_age_minutes or MAX_SNAPSHOT_AGE_MINUTES
     if age < 0:
         reasons.append(f"snapshot timestamp is {-age:.1f} minutes in the future")
@@ -73,6 +84,7 @@ def check_data_quality(params: QualityGateInput) -> QualityGateOutput:
         status="BLOCKED" if reasons else "PASS",
         reasons=reasons,
         age_minutes=round(age, 3),
+        market_state=market_state,
     )
 
 
