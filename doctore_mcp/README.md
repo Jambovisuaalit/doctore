@@ -302,3 +302,35 @@ and `validation`; the full synthetic example is generated in
 `market_id`, `competition`, `target_market`, and `settlement_rules`
 parameters to the resulting canonical output. No fabricated model
 probabilities are permitted in production.
+
+## Configure a local client
+
+Python 3.11+ and a complete source checkout are required. Install only the MCP
+runtime dependencies when model training is not needed:
+
+```bash
+python3 -m venv .venv
+.venv/bin/python -m pip install -r doctore_mcp/requirements.txt
+.venv/bin/python -m doctore_mcp --bet-log /absolute/private/bet-log.csv --check
+.venv/bin/python -m doctore_mcp --bet-log /absolute/private/bet-log.csv --print-config
+```
+
+Copy the generated `mcpServers.doctore` entry into the client's MCP configuration.
+It contains absolute interpreter, launcher and ledger paths, so it works even
+when the client starts outside the checkout. No credentials are written to this
+configuration. Keep the checkout and its virtual environment at those paths;
+regenerate the entry after moving either. Do not publish your generated config.
+`--check` imports and lists capabilities but does not create or mutate the ledger.
+The original `python doctore_mcp/server.py` entrypoint remains supported with its
+existing required environment variables.
+
+MCP discovery includes `doctore://workflow`, `doctore://contracts`, allowlisted
+`doctore://contracts/{name}` schemas and the `review_market` prompt. These expose
+public contracts only, never credentials, model files, bets or arbitrary paths.
+The fourteen-tool table above includes
+`doctore_scan_nhl_totals` (read-only SHADOW scan) and
+`doctore_collect_nhl_totals` (explicit network acquisition plus local evidence writes).
+
+This is a local stdio server. It does not provide a hosted HTTP endpoint, remote
+authentication, automatic bookmaker access, or trained production models. Optional
+providers retain their documented credential and verification requirements.

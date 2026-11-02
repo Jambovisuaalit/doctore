@@ -2,6 +2,14 @@
 
 A modular Agent Skills package for data-driven sports-market analysis. The repository uses progressive disclosure: agents discover skills from compact YAML metadata, load only the selected `SKILL.md`, and access `references/` or execute `scripts/` only when required.
 
+## MCP server
+
+The repository also includes a 14-tool local MCP server with canonical decision
+calculation, explicit approvals, placement records, settlement and portfolio
+tracking. See [MCP setup and contracts](doctore_mcp/README.md#configure-a-local-client).
+Use `python -m doctore_mcp --bet-log /absolute/private/bet-log.csv --check` after
+installing the MCP requirements to verify startup.
+
 ## Architecture
 
 ```text

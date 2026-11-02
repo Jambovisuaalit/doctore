@@ -51,6 +51,7 @@ from doctore_mcp.tools import (  # noqa: E402,F401
     mcp,
 )
 from doctore_mcp.slate_tools import doctore_run_slate  # noqa: E402,F401
+from doctore_mcp import discovery  # noqa: E402,F401
 
 
 if __name__ == "__main__":
