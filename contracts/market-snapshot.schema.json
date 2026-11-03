@@ -39,7 +39,7 @@
     "target_market": {"type": "string", "minLength": 1},
     "period": {"type": "string", "minLength": 1},
     "line": {"type": ["number", "string", "null"]},
-    "settlement_rules": {"type": "string", "minLength": 1},
+    "settlement_rules": {"type": "string", "minLength": 1, "description": "Explicit payoff convention, never an inferred alias. NBA/WNBA: full_game_including_overtime; MLB moneyline: action_including_extra_innings; MLB/KBO/NPB half-line totals/run lines: full_game_including_extra_innings; soccer: soccer_90min_including_stoppage_no_extra_time_v1. Subject to sport/market/outcome constraints. standard/unknown/unverified do not authorize canonical arithmetic. Tennis retirement/void and KBO/NPB moneyline tie payoffs unsupported."},
     "selection": {"type": "string", "minLength": 1},
     "decimal_odds": {"type": "number", "exclusiveMinimum": 1},
     "market_status": {"enum": ["open", "suspended", "closed"]},

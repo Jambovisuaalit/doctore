@@ -48,7 +48,8 @@ class SlateOrchestratorTests(unittest.IsolatedAsyncioTestCase):
         async def quality(_):
             return _Output(status="PASS", reasons=[], age_minutes=0.1)
 
-        async def load(_):
+        async def load(params):
+            self.assertEqual(params.settlement_rules, "action_including_extra_innings")
             return _Output(ok=True, model_output={"schema_version": "doctore.model-output.v1"}, error=None)
 
         async def edge(_):
@@ -135,7 +136,7 @@ class SlateOrchestratorTests(unittest.IsolatedAsyncioTestCase):
                             "prediction_path": "examples/model.json",
                             "competition": "MLB",
                             "target_market": "moneyline",
-                            "market_snapshot": {},
+                            "market_snapshot": {"settlement_rules": "action_including_extra_innings"},
                         }
                     ],
                 )

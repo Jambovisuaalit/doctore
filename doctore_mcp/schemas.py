@@ -92,7 +92,7 @@ class LoadPredictionInput(BaseModel):
     market_id: str
     competition: str
     target_market: str
-    settlement_rules: str = "standard"
+    settlement_rules: str = Field(default="standard", description="Exact payoff convention from the bound market snapshot. Legacy default standard is a structural artifact label only and is not supported canonical NBA/WNBA/MLB/soccer arithmetic. Read market_snapshot.settlement_rules schema description for sport-specific values; never infer or translate bookmaker rules.")
     registry_manifest_path: Optional[str] = None
     registry_calibration_path: Optional[str] = None
     registry_oos_path: Optional[str] = None

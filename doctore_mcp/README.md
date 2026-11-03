@@ -411,3 +411,35 @@ ambiguous integrations. For 1.50/2.80 these values are 1.0238095238 and
 See [the independently sourced terminology decision](../docs/MARKET_QUANTITIES.md)
 and its separate binding file. The original sealed S05 literal FAIL is not
 retroactively changed.
+
+
+### Settlement semantics and slate identity
+
+Canonical market snapshots must explicitly bind payoff semantics. `standard`
+is a legacy artifact-loader label, not an alias for overtime or extra innings.
+A structurally valid string does not mean canonical arithmetic supports it.
+
+| Sport / market | Required settlement_rules | Additional payoff constraints |
+| --- | --- | --- |
+| NBA/WNBA moneyline | `full_game_including_overtime` | Two outcomes, null line |
+| NBA/WNBA spread/total | `full_game_including_overtime` | Half-point line; totals have over/under |
+| MLB moneyline | `action_including_extra_innings` | Two outcomes, null line |
+| MLB/KBO/NPB run line/total | `full_game_including_extra_innings` | Half-point line; totals have over/under |
+| Soccer 1X2/total | `soccer_90min_including_stoppage_no_extra_time_v1` | 1X2 includes draw; total half-line over/under |
+
+Integer-line push payoffs, Asian split payoffs, KBO/NPB moneyline ties and
+tennis retirement/void payoffs remain unsupported. No rule string alone
+authenticates bookmaker terms or source evidence.
+
+For `doctore_run_slate`, first call `doctore_parse_pinnacle_table` with the
+same raw table, sport, event date, timezone, competition and capture time.
+Copy the exact returned `snapshots[].market_id` and snapshot into each item.
+These identifiers are opaque, selection-specific parser identities, not
+bookmaker IDs. Never synthesize them from a team name or use artifact IDs.
+The slate reparses input, checks identity, then governance, quality, model
+loading and decision gates in that order. An unmatched ID yields
+`SLATE_MARKET_NOT_IN_PARSED_INPUT` and intentionally does not inspect the
+artifact. Fix that binding before expecting a missing-artifact diagnostic.
+A matched ID still requires governance and quality to pass before loading.
+The loader receives the snapshot's explicit settlement convention; no
+implicit translation from `standard` is performed.
