@@ -10,7 +10,7 @@ import json
 import math
 
 from jsonschema import Draft202012Validator, FormatChecker
-from market_probability import calculate_market_probabilities
+from market_probability import calculate_market_probabilities, UnsupportedSettlementRules
 from mlb_context import evaluate_mlb_context
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -254,6 +254,8 @@ def evaluate_bet_decision(
         total = market_probabilities["market_sum"]
         overround = market_probabilities["overround"]
     except ValueError as exc:
+        if isinstance(exc, UnsupportedSettlementRules):
+            blocked.append("SETTLEMENT_RULES_UNSUPPORTED")
         blocked.append(
             "SELECTED_PRICE_MISMATCH" if "odds" in str(exc) else "MARKET_INCOMPLETE"
         )

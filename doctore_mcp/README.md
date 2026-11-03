@@ -443,3 +443,11 @@ artifact. Fix that binding before expecting a missing-artifact diagnostic.
 A matched ID still requires governance and quality to pass before loading.
 The loader receives the snapshot's explicit settlement convention; no
 implicit translation from `standard` is performed.
+
+Unsupported explicit settlement conventions return stable
+`SETTLEMENT_RULES_UNSUPPORTED` alongside compatibility `MARKET_INCOMPLETE`.
+Both edge-and-stake and canonical evaluation expose `diagnostics`, identifying
+`settlement_rules`, its supplied value and the required explicit convention.
+This is a diagnosis, not permission to rewrite a rule: confirm bookmaker evidence
+and matching model validation domain. Other payoff constraints still apply.
+Blocked cases retain zero recommended stake and null EV/Kelly/no-vig quantities.

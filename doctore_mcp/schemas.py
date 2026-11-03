@@ -121,6 +121,7 @@ class EdgeAndStakeOutput(BaseModel):
     decision_id: str
     decision: str
     reason_codes: list[str]
+    diagnostics: list[str] = Field(default_factory=list, description="Actionable canonical gate diagnostics; SETTLEMENT_RULES_UNSUPPORTED identifies the supplied rule and required explicit convention. Confirm source evidence and model-domain alignment; never auto-translate rules.")
     no_vig_probability: Optional[float]
     overround: Optional[float] = Field(..., description="Legacy excess fraction: sum(1/decimal_odds)-1. Ambiguous name retained for compatibility; prefer overround_excess or implied_probability_sum.")
     implied_probability_sum: Optional[float] = Field(default=None, description="Booksum B=sum(1/decimal_odds) across the complete outcome set, as a fraction (1.0238 means 102.38%). Not a model probability.")

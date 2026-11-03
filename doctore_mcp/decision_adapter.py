@@ -140,6 +140,7 @@ def calculate_edge_and_stake(params: DecisionInput) -> EdgeAndStakeOutput:
         decision_id=decision["decision_id"],
         decision=decision["decision"],
         reason_codes=decision["reason_codes"],
+        diagnostics=decision["diagnostics"],
         no_vig_probability=decision["market"]["no_vig_probability"],
         overround=decision["market"]["overround"],
         implied_probability_sum=(1.0 + decision["market"]["overround"]) if decision["market"]["overround"] is not None else None,
