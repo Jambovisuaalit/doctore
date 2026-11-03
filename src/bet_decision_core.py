@@ -150,6 +150,15 @@ def _base(model, market, portfolio, policy, evaluated_at, context):
 
 
 def _finish(output, decision, reasons, diagnostics=None):
+    # Production HOLD: a validated calibration label is not proof that the
+    # artifact registry, calibration binary and OOS report were verified.
+    # Until an immutable, independently verified registry binding is wired
+    # into this canonical entry point, no caller may obtain BET.
+    if decision == "BET":
+        decision = "BLOCKED"
+        reasons = ["MODEL_REGISTRY_UNVERIFIED"]
+        output["staking"]["final_stake"] = None
+        output["staking"]["stake_fraction"] = None
     output["decision"] = decision
     output["reason_codes"] = list(dict.fromkeys(reasons)) or ["INPUT_SCHEMA_INVALID"]
     output["diagnostics"].extend(diagnostics or [])
