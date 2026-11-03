@@ -32,7 +32,7 @@ from .schemas import (
 class SlateMarketInput(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    market_id: str
+    market_id: str = Field(..., description="Copy snapshots[].market_id from doctore_parse_pinnacle_table with identical parsing inputs. Opaque parser identity; do not substitute a bookmaker id or invent one. Unmatched identity is rejected before governance, quality or artifact loading.")
     prediction_path: str
     competition: str
     target_market: str
@@ -225,6 +225,7 @@ class SlateOrchestrator:
                     market_id=market.market_id,
                     competition=market.competition,
                     target_market=market.target_market,
+                    settlement_rules=market.market_snapshot.get("settlement_rules", "standard"),
                 )
             )
             model_dict = model_output.model_dump(mode="json")

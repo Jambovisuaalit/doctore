@@ -11,6 +11,10 @@ _BASEBALL_FULL_GAME_RULE = "full_game_including_extra_innings"
 _BASKETBALL_FULL_GAME_RULE = "full_game_including_overtime"
 
 
+class UnsupportedSettlementRules(ValueError):
+    """Canonical payoff rule is not supported for the supplied sport/market."""
+
+
 def _half_line(value: Any) -> bool:
     """Return true only for finite x.5 lines where an integer-score push is impossible."""
     if isinstance(value, bool) or not isinstance(value, (int, float)):
@@ -52,6 +56,19 @@ def _validate_canonical_payoff_semantics(market: Mapping[str, Any]) -> None:
     market_type = market.get("market_type")
     line = market.get("line")
     settlement = market.get("settlement_rules")
+    expected_rule = None
+    if sport in {"NBA", "WNBA"}:
+        expected_rule = _BASKETBALL_FULL_GAME_RULE
+    elif sport in {"MLB", "KBO", "NPB"}:
+        expected_rule = _BASEBALL_ACTION_RULE if market_type == "moneyline" else _BASEBALL_FULL_GAME_RULE
+    elif sport == "SOCCER":
+        expected_rule = _SOCCER_REGULATION_RULE
+    if expected_rule is not None and settlement != expected_rule:
+        raise UnsupportedSettlementRules(
+            f"settlement_rules={settlement!r} unsupported for {sport} {market_type}; "
+            f"required explicit convention: {expected_rule}. Confirm bookmaker evidence and model domain; "
+            "do not infer or translate rules. Other payoff constraints still apply."
+        )
 
     if sport == "MLB":
         if market_type == "moneyline" and line is None and settlement == _BASEBALL_ACTION_RULE:

@@ -161,3 +161,8 @@ The edge-and-stake output adds nullable implied_probability_sum (B) and
 overround_excess (B-1). Legacy overround retains B-1 and its original nullable
 number type. All decision mathematics and 14 tool names are preserved. This is
 an explicitly classified additive public output change, not a regrade of S05.
+
+Settlement diagnosis follow-up: additive `diagnostics` array on edge-and-stake
+output and additive canonical reason `SETTLEMENT_RULES_UNSUPPORTED` for an
+unsupported explicit convention. `MARKET_INCOMPLETE` remains for compatibility.
+No rule aliases, gate bypass or calculation changes for supported markets.
