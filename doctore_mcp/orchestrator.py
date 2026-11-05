@@ -155,15 +155,15 @@ class SlateOrchestrator:
 
         parser_dict = parser_output.model_dump(mode="json")
         portfolio_dict = portfolio_output.model_dump(mode="json")
-        parser_market_ids = {
-            str(snapshot.get("market_id"))
+        parser_snapshots = {
+            str(snapshot.get("market_id")): snapshot
             for snapshot in parser_dict.get("snapshots", [])
             if snapshot.get("market_id") is not None
         }
 
         results: list[SlateItemResult] = []
         for market in params.markets:
-            parser_snapshot_found = market.market_id in parser_market_ids
+            parser_snapshot_found = market.market_id in parser_snapshots
             if not parser_snapshot_found:
                 results.append(
                     SlateItemResult(
@@ -173,6 +173,13 @@ class SlateOrchestrator:
                         parser_snapshot_found=False,
                     )
                 )
+                continue
+
+            if market.market_snapshot != parser_snapshots[market.market_id]:
+                results.append(SlateItemResult(
+                    market_id=market.market_id, status="REJECTED",
+                    reason_codes=["SLATE_SNAPSHOT_MISMATCH"], parser_snapshot_found=True,
+                ))
                 continue
 
             governance_result = validate_market_governance(
@@ -225,6 +232,7 @@ class SlateOrchestrator:
                     market_id=market.market_id,
                     competition=market.competition,
                     target_market=market.target_market,
+                    settlement_rules=market.market_snapshot["settlement_rules"],
                 )
             )
             model_dict = model_output.model_dump(mode="json")

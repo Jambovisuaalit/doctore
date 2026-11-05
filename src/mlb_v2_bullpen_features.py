@@ -168,7 +168,16 @@ def materialize_bullpen_group(
     records_3d: dict[int, list[Mapping[str, Any]]] = {away_team_id: [], home_team_id: []}
     contributing: dict[str, Mapping[str, Any]] = {}
 
+    seen_events: set[str] = set()
+    seen_games: set[str] = set()
     for record in source_records:
+        source_id = str(record.get("event_id", "")).strip()
+        game_id = str(record.get("game_pk", "")).strip()
+        if not source_id or source_id in seen_events or (game_id and game_id in seen_games):
+            raise BullpenMaterializationError("duplicate or missing source event identity")
+        seen_events.add(source_id)
+        if game_id:
+            seen_games.add(game_id)
         relevant_sides = [
             (team_id, side)
             for team_id, side in ((away_team_id, "AWAY"), (home_team_id, "HOME"))

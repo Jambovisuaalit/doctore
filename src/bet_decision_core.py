@@ -200,6 +200,10 @@ def evaluate_bet_decision(
         ("portfolio", portfolio_state), ("policy", risk_policy),
     ):
         invalid.extend(_errors(name, payload))
+        try:
+            json.dumps(payload, allow_nan=False)
+        except (ValueError, TypeError):
+            invalid.append(f"{name}: non-finite or non-JSON value")
     try:
         evaluated = _time(evaluated_at)
     except (TypeError, ValueError) as exc:

@@ -13,6 +13,13 @@ from mlb_v2_bullpen_features import derive_slate_cutoffs, materialize_bullpen_gr
 
 
 class MlbV2BullpenFeatureTests(unittest.TestCase):
+    def test_duplicate_history_cannot_double_workload(self):
+        rows = self.passing_sources()
+        for duplicate in (rows[0], dict(rows[0], event_id="mlb:alias")):
+            with self.subTest(event=duplicate["event_id"]):
+                with self.assertRaisesRegex(ValueError, "duplicate"):
+                    materialize_bullpen_group(self.target(), feature_cutoff_at="2021-07-10T18:00:00Z", source_records=rows + [duplicate])
+
     def target(self) -> dict:
         return {
             "event_id": "mlb:target",

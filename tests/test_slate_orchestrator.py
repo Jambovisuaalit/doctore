@@ -43,12 +43,13 @@ class SlateOrchestratorTests(unittest.IsolatedAsyncioTestCase):
         calls = []
 
         async def parse(_):
-            return _Output(snapshots=[{"market_id": "m1"}], diagnostics=[])
+            return _Output(snapshots=[{"market_id": "m1", "settlement_rules": "action_including_extra_innings"}], diagnostics=[])
 
         async def quality(_):
             return _Output(status="PASS", reasons=[], age_minutes=0.1)
 
-        async def load(_):
+        async def load(params):
+            self.assertEqual(params.settlement_rules, "action_including_extra_innings")
             return _Output(ok=True, model_output={"schema_version": "doctore.model-output.v1"}, error=None)
 
         async def edge(_):
@@ -135,7 +136,7 @@ class SlateOrchestratorTests(unittest.IsolatedAsyncioTestCase):
                             "prediction_path": "examples/model.json",
                             "competition": "MLB",
                             "target_market": "moneyline",
-                            "market_snapshot": {},
+                            "market_snapshot": {"market_id": "m1", "settlement_rules": "action_including_extra_innings"},
                         }
                     ],
                 )
@@ -143,6 +144,33 @@ class SlateOrchestratorTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result.items[0].status, "AWAITING_HUMAN_APPROVAL")
         self.assertIn("HUMAN_APPROVAL_REQUIRED", result.items[0].reason_codes)
         self.assertEqual(calls, [])
+
+    async def test_same_market_id_cannot_substitute_price_or_rules(self):
+        async def parse(_):
+            return _Output(snapshots=[{"market_id": "m1", "decimal_odds": 1.9,
+                                       "settlement_rules": "action_including_extra_innings"}])
+
+        async def portfolio(_):
+            return _Output()
+
+        async def unused(_):
+            raise AssertionError("mismatched snapshot must be rejected before downstream tools")
+
+        orchestrator = SlateOrchestrator(
+            parse_pinnacle_table=parse, portfolio_status=portfolio, check_data_quality=unused,
+            load_model_prediction=unused, calculate_edge_and_stake=unused,
+            evaluate_bet=unused, log_bet=unused, settle_bet=unused,
+        )
+        for change in ({"decimal_odds": 2.5}, {"settlement_rules": "different"}):
+            snapshot = {"market_id": "m1", "decimal_odds": 1.9,
+                        "settlement_rules": "action_including_extra_innings", **change}
+            result = await orchestrator.run(SlateRunInput(
+                raw_table="header\nrow with enough content", sport="mlb", event_date="2026-07-29",
+                captured_at="2026-07-29T10:00:00Z", bankroll=1000, portfolio_state={}, risk_policy={},
+                markets=[{"market_id": "m1", "prediction_path": "examples/model.json",
+                          "competition": "MLB", "target_market": "moneyline", "market_snapshot": snapshot}],
+            ))
+            self.assertEqual(result.items[0].reason_codes, ["SLATE_SNAPSHOT_MISMATCH"])
 
     async def test_missing_parser_snapshot_has_reason_code(self):
         async def parse(_):
@@ -190,7 +218,7 @@ class SlateOrchestratorTests(unittest.IsolatedAsyncioTestCase):
                         "prediction_path": "examples/model.json",
                         "competition": "MLB",
                         "target_market": "moneyline",
-                        "market_snapshot": {},
+                        "market_snapshot": {"market_id": "m1", "settlement_rules": "action_including_extra_innings"},
                     }
                 ],
             )
