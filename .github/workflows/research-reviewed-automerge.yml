@@ -1,0 +1,97 @@
+name: Research-only PR guarded auto-merge
+on:
+  workflow_dispatch:
+  pull_request_review:
+    types: [submitted, dismissed]
+  schedule:
+    - cron: '*/15 * * * *'
+
+permissions:
+  contents: write
+  pull-requests: read
+  actions: read
+
+concurrency:
+  group: doctore-research-auto-merge
+  cancel-in-progress: false
+
+jobs:
+  reviewed-research-merge:
+    if: github.repository == 'Jambovisuaalit/doctore'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      REPO: Jambovisuaalit/doctore
+    steps:
+      - name: Enforce independent review and exact-SHA green CI before any merge
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          prs="$(gh pr list --repo "$REPO" --state open --base main --label 'automerge:research-only' --json number --jq '.[].number')"
+          if [[ -z "$prs" ]]; then echo "No opted-in PRs"; exit 0; fi
+          for PR in $prs; do
+            echo "Checking PR #$PR"
+            pr="$(gh api "repos/$REPO/pulls/$PR")"
+            [[ "$(jq -r '.draft' <<< "$pr")" == "false" ]] || { echo "HOLD: draft"; continue; }
+            [[ "$(jq -r '.head.repo.full_name' <<< "$pr")" == "$REPO" ]] || { echo "HOLD: external fork"; continue; }
+            HEAD="$(jq -r '.head.sha' <<< "$pr")"
+            AUTHOR="$(jq -r '.user.login' <<< "$pr")"
+            [[ "$(jq -r '.mergeable' <<< "$pr")" == "true" ]] || { echo "HOLD: mergeable != true"; continue; }
+
+            # Fail closed for non-shadow changes. Never authorize betting, ledger or deployment modifications.
+            files="$(gh api --paginate "repos/$REPO/pulls/$PR/files?per_page=100" | jq -s 'add')"
+            count="$(jq 'length' <<< "$files")"
+            if [[ "$count" -eq 0 || "$count" -ge 100 ]]; then echo "HOLD: invalid or paginated file set"; continue; fi
+            if jq -e 'any(.[]; (.filename | test("^(tests/|doctore_mcp/market_core_shadow_bridge\\.py$)") | not))' <<< "$files" >/dev/null; then
+              echo "HOLD: file outside research-only allowlist"
+              continue
+            fi
+
+            compare="$(gh api "repos/$REPO/compare/main...$HEAD")"
+            [[ "$(jq -r '.behind_by' <<< "$compare")" == "0" ]] || { echo "HOLD: base moved"; continue; }
+
+            reviews="$(gh api --paginate "repos/$REPO/pulls/$PR/reviews?per_page=100" | jq -s 'add')"
+            latest="$(jq '[sort_by(.submitted_at // "") | group_by(.user.login)[] | last]' <<< "$reviews")"
+            if jq -e 'any(.[]; .state == "CHANGES_REQUESTED")' <<< "$latest" >/dev/null; then
+              echo "HOLD: changes requested"
+              continue
+            fi
+            approved="$(jq -r --arg author "$AUTHOR" --arg sha "$HEAD" '
+              .[] | select(.state == "APPROVED" and .commit_id == $sha and
+              .user.login != $author and .user.type == "User") | .user.login
+            ' <<< "$latest")"
+            reviewer_ok=false
+            for reviewer in $approved; do
+              permission="$(gh api "repos/$REPO/collaborators/$reviewer/permission" --jq '.permission' 2>/dev/null || echo none)"
+              if [[ "$permission" == "write" || "$permission" == "maintain" || "$permission" == "admin" ]]; then
+                reviewer_ok=true
+                break
+              fi
+            done
+            [[ "$reviewer_ok" == "true" ]] || { echo "HOLD: independent write-access review missing"; continue; }
+
+            threads="$(gh api graphql -f query='query($owner:String!,$name:String!,$number:Int!){repository(owner:$owner,name:$name){pullRequest(number:$number){reviewThreads(first:100){pageInfo{hasNextPage} nodes{isResolved}}}}}' -F owner=Jambovisuaalit -F name=doctore -F number="$PR")"
+            [[ "$(jq -r '.data.repository.pullRequest.reviewThreads.pageInfo.hasNextPage' <<< "$threads")" == "false" ]] || { echo "HOLD: review thread pagination"; continue; }
+            if jq -e 'any(.data.repository.pullRequest.reviewThreads.nodes[]; .isResolved == false)' <<< "$threads" >/dev/null; then
+              echo "HOLD: unresolved review threads"
+              continue
+            fi
+
+            runs="$(gh api "repos/$REPO/actions/runs?head_sha=$HEAD&event=pull_request&per_page=100")"
+            [[ "$(jq -r '.total_count' <<< "$runs")" -lt 100 ]] || { echo "HOLD: CI run pagination"; continue; }
+            ci_ok=true
+            for workflow in "Test Doctore mathematics" "Doctore validation" "CI Diagnostics and Verification"; do
+              if ! jq -e --arg name "$workflow" --arg sha "$HEAD" '
+                [.workflow_runs[] | select(.name == $name and .head_sha == $sha)]
+                | sort_by(.created_at) | last
+                | select(.status == "completed" and .conclusion == "success")
+              ' <<< "$runs" >/dev/null; then
+                echo "HOLD: $workflow not green on $HEAD"
+                ci_ok=false
+              fi
+            done
+            [[ "$ci_ok" == "true" ]] || continue
+            echo "MERGE-GATE PASS: PR #$PR, head=$HEAD"
+            gh pr merge "$PR" --repo "$REPO" --squash --match-head-commit "$HEAD"
+          done
